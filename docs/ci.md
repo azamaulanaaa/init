@@ -49,9 +49,9 @@ stops the run. The exit status is non-zero.
 
 ### Prerequisites
 
-You need `jactionlint`, `git`, and `shellcheck` on `PATH`. You also need
-`make` to use the Makefile targets. `mise` is optional. Run `make help`
-to list the available targets.
+You need `jactionlint`, `git`, `shellcheck`, and `zizmor` on `PATH`.
+You also need `make` to use the Makefile targets. `mise` is optional.
+Run `make help` to list the available targets.
 
 ### Run all checks
 
@@ -86,11 +86,13 @@ make check-bash
 make check-commits
 make check-markdown
 make check-mise
+make check-zizmor
 ```
 
 These targets call `scripts/check-jactionlint.sh`,
 `scripts/check-bash.sh`, `scripts/check-commits.sh`,
-`scripts/check-markdown.sh`, and `scripts/check-mise.sh`.
+`scripts/check-markdown.sh`, `scripts/check-mise.sh`, and
+`scripts/check-zizmor.sh`.
 
 From the repository root, run a check script directly:
 
