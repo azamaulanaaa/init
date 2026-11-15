@@ -52,9 +52,10 @@ stops the run. The exit status is non-zero.
 
 ### Prerequisites
 
-You need `git`, `hadolint`, `jactionlint`, `shellcheck`, `shfmt`, and
-`zizmor` on `PATH`. You also need `make` to use the Makefile targets.
-`mise` is optional. Run `make help` to list the available targets.
+You need `dockerfmt`, `git`, `hadolint`, `jactionlint`, `shellcheck`,
+`shfmt`, and `zizmor` on `PATH`. You also need `make` to use the
+Makefile targets. `mise` is optional. Run `make help` to list the
+available targets.
 
 ### Run all checks
 
@@ -87,6 +88,7 @@ Run a single check through the Makefile:
 make check-jactionlint
 make check-bash
 make check-commits
+make check-dockerfmt
 make check-hadolint
 make check-markdown
 make check-mise
@@ -96,9 +98,9 @@ make check-zizmor
 
 These targets call `scripts/check-jactionlint.sh`,
 `scripts/check-bash.sh`, `scripts/check-commits.sh`,
-`scripts/check-hadolint.sh`, `scripts/check-markdown.sh`,
-`scripts/check-mise.sh`, `scripts/check-shfmt.sh`, and
-`scripts/check-zizmor.sh`.
+`scripts/check-dockerfmt.sh`, `scripts/check-hadolint.sh`,
+`scripts/check-markdown.sh`, `scripts/check-mise.sh`,
+`scripts/check-shfmt.sh`, and `scripts/check-zizmor.sh`.
 
 From the repository root, run a check script directly:
 
@@ -128,18 +130,23 @@ make format
 prints `run: <script>` before each script. It stops at the first
 failure. After the last script it prints
 `all formatting applied (N scripts)`. When no format script exists, it
-prints `no format scripts` and exits 0.
+prints `no format scripts` and exits 0. The run includes
+`scripts/format-shfmt.sh` and `scripts/format-dockerfmt.sh`.
 
 Run one formatter:
 
 ```bash
 make format-shfmt
+make format-dockerfmt
 ```
 
-`scripts/format-shfmt.sh` runs `shfmt -i 2 -w` on the bash files.
-The check script `scripts/check-shfmt.sh` runs `shfmt -i 2 -d` on the
-same files. It does not write. Commit the changed files after
-`make format`.
+`scripts/format-shfmt.sh` runs `shfmt -i 2 -w` on the bash files. The
+check script `scripts/check-shfmt.sh` runs `shfmt -i 2 -d` on the same
+files. It does not write. `scripts/format-dockerfmt.sh` runs
+`dockerfmt --write` on the Dockerfile and Containerfile files. The check
+script `scripts/check-dockerfmt.sh` runs `dockerfmt --check` on the same
+files. It does not write. CI runs the check scripts only. Commit the
+changed files after `make format`.
 
 ## Add a new check
 
@@ -271,8 +278,8 @@ can drift and produce different results.
 
 The workflow [`ci.yml`](../.github/workflows/ci.yml) runs the checks on
 GitHub Actions. It runs on each pull request and each push to `main`.
-The workflow has eight jobs: `mise`, `jactionlint`, `bash`, `shfmt`,
-`commits`, `hadolint`, `markdown`, and `zizmor`.
+The workflow has nine jobs: `mise`, `jactionlint`, `bash`, `shfmt`,
+`commits`, `markdown`, `hadolint`, `dockerfmt`, and `zizmor`.
 
 Each job uses the `jdxcode/mise` image on the `ubuntu-24.04` runner. The
 image provides mise, git, curl, and CA certificates. It provides no
