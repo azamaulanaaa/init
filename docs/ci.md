@@ -7,14 +7,17 @@ This document describes the local check pipeline.
 The check pipeline is the set of scripts that verify the repository. An
 entry point is the command that starts the pipeline. The entry point is
 [`scripts/ci.sh`](../scripts/ci.sh). It finds every check script and runs
-it in name order. A check script checks one area, such as shell syntax.
+it in name order. A check script checks one area, such as shell syntax
+or the commit history.
 
-The Git hooks and the Makefile call the same check scripts. A Git hook is
-a script that Git runs at a defined event. This design keeps one set of
-checks.
+The `pre-commit` and `pre-push` hooks and the Makefile call the same
+check scripts. A Git hook is a script that Git runs at a defined event.
+This design keeps one set of checks. The
+[release workflow](release.md) uses the same commit format.
 
 [`mise`](https://mise.jdx.dev/) installs development tools. It does not
-start the check pipeline. The hooks run `scripts/ci.sh` directly.
+start the check pipeline. The `pre-commit` and `pre-push` hooks run
+`scripts/ci.sh` directly.
 `make ci` runs the same script and does not call mise. `make hooks`
 sets the hook path and makes the hooks executable.
 `scripts/check-mise.sh` uses `mise` only to check `mise.toml`, and
@@ -27,12 +30,15 @@ These commands and files make up the pipeline:
 - `scripts/ci.sh`: Runs every `scripts/check-*.sh` in name order. Stops
   at the first failure.
 - `make ci`: Runs `scripts/ci.sh`.
+- `.githook/commit-msg`: Runs `cog verify` on the commit message. A bad
+  message stops the commit.
 - `.githook/pre-commit`: Runs `scripts/ci.sh` before each commit.
 - `.githook/pre-push`: Runs `scripts/ci.sh` before each push.
 - `make hooks`: Sets `core.hooksPath` to `.githook`. Makes the hooks
   executable.
 
-The hooks call `scripts/ci.sh` directly. They do not call mise. If a
+The `pre-commit` and `pre-push` hooks call `scripts/ci.sh` directly.
+The `commit-msg` hook calls `cog verify`. No hook calls mise. If a
 required tool is missing from `PATH`, the hook fails.
 
 `scripts/ci.sh` prints `run: <script>` before each check. It prints
@@ -76,10 +82,12 @@ Run a single check through the Makefile:
 
 ```bash
 make check-bash
+make check-commits
 make check-mise
 ```
 
-These targets call `scripts/check-bash.sh` and `scripts/check-mise.sh`.
+These targets call `scripts/check-bash.sh`, `scripts/check-commits.sh`,
+and `scripts/check-mise.sh`.
 
 From the repository root, run a check script directly:
 
