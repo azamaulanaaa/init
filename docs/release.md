@@ -1,8 +1,8 @@
 # Release workflow
 
 This document describes the release workflow. The repository uses
-[Cocogitto](https://docs.cocogitto.io/) for the commit checks, the
-changelog, and the version bump. The command name is `cog`.
+[`Cocogitto`](https://docs.cocogitto.io/) to check commits, write the
+changelog, and bump the version. The command name is `cog`.
 
 ## Commit format
 
@@ -29,13 +29,13 @@ A `BREAKING CHANGE:` footer also marks a breaking change.
 
 ## Enforcement
 
-Three points check the commit format:
+The repository enforces the commit format in three places:
 
-- `.githook/commit-msg`: Runs `cog verify --file` on the message before
+- `.githook/commit-msg` runs `cog verify --file` on the message before
   Git creates the commit. A bad message stops the commit.
-- `scripts/check-commits.sh`: Runs `cog check` from `scripts/ci.sh`.
+- `scripts/check-commits.sh` runs `cog check` from `scripts/ci.sh`.
   `make ci` and both Git hooks run this script.
-- `.githook/pre-push`: Runs `scripts/ci.sh` before each push. A bad
+- `.githook/pre-push` runs `scripts/ci.sh` before each push. A bad
   commit in the history stops the push.
 
 Do not use `--no-verify` to skip these checks. The
@@ -62,14 +62,14 @@ series marks a version before the first stable release.
 
 ## Make a release
 
-Run the release on the `main` branch. The `cog.toml` file permits a
-bump on that branch only. Run this command:
+Run the release on the `main` branch. `cog.toml` permits a bump on that
+branch only. Run this command:
 
 ```bash
 make release
 ```
 
-The target runs `cog bump --auto`. It does three steps:
+The target runs `cog bump --auto`. The command has three steps:
 
 1. It updates `CHANGELOG.md`.
 2. It creates a version commit.
@@ -91,15 +91,15 @@ write the changelog, create a commit, or create a tag.
 ## First release
 
 The repository has no tag. Select the first version before the first
-release. Use one of these commands:
+release. Run one of these commands:
 
 ```bash
 cog bump --version 1.0.0
 cog bump --version 0.1.0
 ```
 
-The choice is the maintainer's. Use `1.0.0` when the public interface
-is stable. Use `0.1.0` when the interface can change.
+The maintainer decides the first version. Use `1.0.0` when the public
+interface is stable. Use `0.1.0` when the interface can change.
 
 ## Troubleshooting
 
@@ -112,10 +112,10 @@ the tool is absent:
 error: cog is not on PATH. Install cocogitto first.
 ```
 
-### A commit message is rejected
+### The commit hook rejects a message
 
-The commit hook runs `cog verify`. Read the error and write the message
-in the commit format. To correct the last commit, run:
+The commit hook runs `cog verify`. Read the error. Write the message in
+the commit format. Run this command to correct the last commit:
 
 ```bash
 git commit --amend
@@ -125,6 +125,6 @@ Do not use `--no-verify`.
 
 ### The Markdown check skips `CHANGELOG.md`
 
-The skip is correct. `cog bump` generates the file and its format can
-disagree with the Markdown rules. `scripts/check-markdown.sh` excludes
-the file. Do not add the file to the check.
+`cog bump` generates the file. The file format can disagree with the
+Markdown rules. `scripts/check-markdown.sh` skips the file on purpose.
+Do not add the file to the check.

@@ -1,7 +1,7 @@
 # Guide
 
-The sections below show how to set up the hooks, run the checks, commit,
-and release a version.
+The sections below show how to install the hooks, run the checks,
+commit, and release a version.
 
 ## Requirements
 
@@ -9,9 +9,9 @@ You need `git` and `make`.
 
 The checks need `cog`, `dockerfmt`, `hadolint`, `jactionlint`,
 `markdownlint-cli2`, `shellcheck`, `shfmt`, and `zizmor`. If you use
-[mise](https://mise.jdx.dev/), run `mise install` to install them. Then
-activate mise in your shell so the installed tools are on `PATH`. The
-mise documentation describes the command for each shell.
+[`mise`](https://mise.jdx.dev/), run `mise install` to install these
+tools. Then activate `mise` in your shell so the installed tools are on
+`PATH`. The `mise` documentation describes the command for each shell.
 
 ## Setup
 
@@ -21,16 +21,16 @@ Run this command from the repository root:
 make hooks
 ```
 
-The target sets `core.hooksPath` to `.githook`. It also makes the three
-hook files executable.
+The target sets `core.hooksPath` to `.githook`. The target also makes
+the three hook files executable.
 
 ## Checks
 
-`make ci` runs every check. It calls `scripts/ci.sh`, and that script
-runs each `scripts/check-*.sh` file in name order. The run stops at the
-first failure.
+`make ci` runs every check. It calls `scripts/ci.sh`. That script runs
+each `scripts/check-*.sh` file in name order. The run stops when a check
+fails.
 
-Run one check with a Makefile target:
+Run these commands to check one area at a time:
 
 ```bash
 make check-jactionlint
@@ -44,36 +44,37 @@ make check-shfmt
 make check-zizmor
 ```
 
-`make check-mise` prints a skip message and exits 0 when mise is absent.
-`make help` lists every target.
+`make check-mise` prints a skip message and exits 0 when `mise` is
+absent. `make help` lists every target.
 
-The checks are read-only. They report a problem and exit non-zero. They
-do not change files.
+The checks do not change files. They report a problem and exit non-zero.
 
 ## Format
 
-`make ci` does not write files. To apply the formatters, run:
+`make ci` does not write files. Run this command to apply the formatters:
 
 ```bash
 make format
 ```
 
-The target calls `scripts/format.sh`, and that script runs each
-`scripts/format-*.sh` file in name order. The run stops at the first
-failure. Run one formatter with a Makefile target:
+The target calls `scripts/format.sh`. That script runs each
+`scripts/format-*.sh` file in name order. The run stops when a formatter
+fails.
+
+Run these commands to apply one formatter at a time:
 
 ```bash
 make format-shfmt
 make format-dockerfmt
 ```
 
-`make format-shfmt` writes the bash file format with `shfmt`.
-`make format-dockerfmt` writes the Dockerfile and Containerfile format
+`make format-shfmt` formats the bash files with `shfmt`.
+`make format-dockerfmt` formats the Dockerfile and Containerfile files
 with `dockerfmt`. Commit the changed files after `make format`.
 
 GitHub Actions runs the same checks on pull requests and pushes to
 `main`. The workflow is `.github/workflows/ci.yml`. The
-[check pipeline](docs/ci.md) describes it.
+[check pipeline](docs/ci.md) describes the workflow.
 
 ## Git hooks
 
@@ -83,8 +84,8 @@ GitHub Actions runs the same checks on pull requests and pushes to
 - `.githook/pre-commit` runs `scripts/ci.sh` before each commit.
 - `.githook/pre-push` runs `scripts/ci.sh` before each push.
 
-Do not use `--no-verify` to skip a hook. A hook failure shows a real
-problem. Fix the problem, then commit or push again.
+Do not use `--no-verify` to skip a hook. A failed hook shows a problem.
+Fix the problem. Then commit or push again.
 
 ## Commit format
 
@@ -109,17 +110,19 @@ branch only. Run this command:
 make release
 ```
 
-The target runs `cog bump --auto`. It updates `CHANGELOG.md`, creates a
-version commit, and creates a tag with the `v` prefix, for example
+The target runs `cog bump --auto`. It updates `CHANGELOG.md`. It creates
+a version commit. It also creates a tag with the `v` prefix, for example
 `v1.2.3`.
 
-To see the next version and change nothing, run:
+Run this command to see the next version:
 
 ```bash
 cog bump --dry-run --auto
 ```
 
-The first release needs an explicit version. Use one of these commands:
+The command changes nothing.
+
+The first release needs an explicit version. Run one of these commands:
 
 ```bash
 cog bump --version 1.0.0
@@ -131,23 +134,28 @@ interface can change.
 
 ## Repository layout
 
-- `.github/workflows/ci.yml`: The GitHub Actions check workflow.
-- `.githook/`: The three Git hooks.
-- `scripts/`: The check and format scripts, and the `ci.sh` entry point.
-- `docs/`: The check and release documents.
-- `cog.toml`: The Cocogitto settings for commits, changelog, and tags.
-- `Makefile`: The command targets for setup, checks, and release.
-- `mise.toml`: The tool version constraints.
-- `LICENSE`: The license text.
+- `.github/workflows/ci.yml` defines the check workflow for GitHub
+  Actions.
+- `.githook/` contains the three Git hooks.
+- `scripts/` contains the check scripts, the format scripts, and the
+  `ci.sh` entry point.
+- `docs/` contains the check and release documents.
+- `cog.toml` contains the `Cocogitto` settings for commits, changelog,
+  and tags.
+- `Makefile` contains the command targets for setup, checks, and
+  release.
+- `mise.toml` contains the tool version constraints.
+- `LICENSE` contains the license text.
 
 ## Documentation
 
-- [Check pipeline](docs/ci.md): How the checks run and how to add one.
-- [Release workflow](docs/release.md): The commit format and release
-  steps.
+- The [check pipeline](docs/ci.md) describes how the checks run and how
+  to add a check.
+- The [release workflow](docs/release.md) describes the commit format
+  and the release steps.
 
 ## License
 
-This project uses the MIT License. See [LICENSE](LICENSE).
+This project uses the MIT License. See [`LICENSE`](LICENSE).
 
 Copyright (c) 2026 Aza Maulana.

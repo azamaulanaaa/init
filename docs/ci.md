@@ -4,44 +4,45 @@ This document describes the local check pipeline.
 
 ## Overview
 
-The check pipeline is the set of scripts that verify the repository. An
-entry point is the command that starts the pipeline. The entry point is
-[`scripts/ci.sh`](../scripts/ci.sh). It finds every check script and runs
-it in name order. A check script checks one area, such as shell syntax
-or the commit history.
+The check pipeline is the set of scripts that check the repository. The
+pipeline starts at one entry point, [`scripts/ci.sh`](../scripts/ci.sh).
+`scripts/ci.sh` finds every check script. It runs each check script in
+name order. A check script checks one area, such as shell syntax or the
+commit history.
 
-The `pre-commit` and `pre-push` hooks and the Makefile call the same
+The `pre-commit` and `pre-push` hooks and the `Makefile` call the same
 check scripts. A Git hook is a script that Git runs at a defined event.
-This design keeps one set of checks. The
+The repository has one set of checks. The
 [release workflow](release.md) uses the same commit format.
 
 [`mise`](https://mise.jdx.dev/) installs development tools. It does not
 start the check pipeline. The `pre-commit` and `pre-push` hooks run
-`scripts/ci.sh` directly.
-`make ci` runs the same script and does not call mise. `make hooks`
-sets the hook path and makes the hooks executable.
-`scripts/check-mise.sh` uses `mise` only to check `mise.toml`, and
-skips that check when mise is absent.
+`scripts/ci.sh` directly. `make ci` runs the same script and does not
+call `mise`.
+
+`make hooks` sets the hook path and makes the hooks executable.
+`scripts/check-mise.sh` uses `mise` only to check `mise.toml`. It skips
+that check when `mise` is absent.
 
 ## How the pieces fit
 
-These commands and files make up the pipeline:
+These commands and files form the pipeline:
 
-- `scripts/ci.sh`: Runs every `scripts/check-*.sh` in name order. Stops
-  at the first failure.
-- `make ci`: Runs `scripts/ci.sh`.
-- `scripts/format.sh`: Runs every `scripts/format-*.sh` in name order.
-  Stops at the first failure.
-- `make format`: Runs `scripts/format.sh`.
-- `.githook/commit-msg`: Runs `cog verify` on the commit message. A bad
+- `scripts/ci.sh` runs every `scripts/check-*.sh` in name order. It
+  stops when a check fails.
+- `make ci` runs `scripts/ci.sh`.
+- `scripts/format.sh` runs every `scripts/format-*.sh` in name order. It
+  stops when a formatter fails.
+- `make format` runs `scripts/format.sh`.
+- `.githook/commit-msg` runs `cog verify` on the commit message. A bad
   message stops the commit.
-- `.githook/pre-commit`: Runs `scripts/ci.sh` before each commit.
-- `.githook/pre-push`: Runs `scripts/ci.sh` before each push.
-- `make hooks`: Sets `core.hooksPath` to `.githook`. Makes the hooks
+- `.githook/pre-commit` runs `scripts/ci.sh` before each commit.
+- `.githook/pre-push` runs `scripts/ci.sh` before each push.
+- `make hooks` sets `core.hooksPath` to `.githook`. It makes the hooks
   executable.
 
 The `pre-commit` and `pre-push` hooks call `scripts/ci.sh` directly.
-The `commit-msg` hook calls `cog verify`. No hook calls mise. If a
+The `commit-msg` hook calls `cog verify`. No hook calls `mise`. If a
 required tool is missing from `PATH`, the hook fails.
 
 `scripts/ci.sh` prints `run: <script>` before each check. It prints
@@ -52,9 +53,9 @@ stops the run. The exit status is non-zero.
 
 ### Prerequisites
 
-You need `dockerfmt`, `git`, `hadolint`, `jactionlint`, `shellcheck`,
-`shfmt`, and `zizmor` on `PATH`. You also need `make` to use the
-Makefile targets. `mise` is optional. Run `make help` to list the
+You need `git` and `make`. The checks need `cog`, `dockerfmt`,
+`hadolint`, `jactionlint`, `markdownlint-cli2`, `shellcheck`, `shfmt`,
+and `zizmor` on `PATH`. `mise` is optional. Run `make help` to list the
 available targets.
 
 ### Run all checks
@@ -65,24 +66,24 @@ Run this command:
 make ci
 ```
 
-From the repository root, run the entry point directly:
+Run this command from the repository root:
 
 ```bash
 scripts/ci.sh
 ```
 
-You can also use a path that reaches the script. `scripts/ci.sh` changes
-to the repository root after it starts.
+You can also run the script from any directory inside the repository.
+`scripts/ci.sh` changes to the repository root after it starts.
 
-`make ci` and `scripts/ci.sh` run the same checks. The Makefile target
+`make ci` and `scripts/ci.sh` run the same checks. The `Makefile` target
 calls the script.
 
-The run stops at the first failed check. Fix the failure and run the
-command again.
+The run stops when a check fails. Fix the problem. Then run the command
+again.
 
 ### Run one check
 
-Run a single check through the Makefile:
+Run these commands to check one area at a time:
 
 ```bash
 make check-jactionlint
@@ -102,38 +103,38 @@ These targets call `scripts/check-jactionlint.sh`,
 `scripts/check-markdown.sh`, `scripts/check-mise.sh`,
 `scripts/check-shfmt.sh`, and `scripts/check-zizmor.sh`.
 
-From the repository root, run a check script directly:
+Run this command from the repository root:
 
 ```bash
 ./scripts/check-bash.sh
 ```
 
 The existing check scripts change to the repository root. A new check
-script must do the same. The worktree is the checked-out copy of the
-repository.
+script must also change to the repository root. The working tree is the
+set of checked-out files in the repository.
 
-`scripts/check-mise.sh` prints a skip warning and exits 0 when `mise` is
-absent. This behavior is intentional.
+`scripts/check-mise.sh` prints a skip message and exits 0 when `mise` is
+absent. The script skips the check on purpose.
 
 ### Format the files
 
-The checks are read-only. A check reports a problem and exits non-zero.
-It does not change a file. To change the files, use a format script.
+The checks do not change files. A check reports a problem and exits
+non-zero. Use a format script to change the files.
 
-Run every formatter:
+Run this command to apply every formatter:
 
 ```bash
 make format
 ```
 
 `scripts/format.sh` runs each `scripts/format-*.sh` in name order. It
-prints `run: <script>` before each script. It stops at the first
-failure. After the last script it prints
-`all formatting applied (N scripts)`. When no format script exists, it
-prints `no format scripts` and exits 0. The run includes
-`scripts/format-shfmt.sh` and `scripts/format-dockerfmt.sh`.
+prints `run: <script>` before each script. It stops when a formatter
+fails. It prints `all formatting applied (N scripts)` after the last
+script. When no format script exists, it prints `no format scripts` and
+exits 0. The run includes `scripts/format-shfmt.sh` and
+`scripts/format-dockerfmt.sh`.
 
-Run one formatter:
+Run these commands to apply one formatter at a time:
 
 ```bash
 make format-shfmt
@@ -142,11 +143,15 @@ make format-dockerfmt
 
 `scripts/format-shfmt.sh` runs `shfmt -i 2 -w` on the bash files. The
 check script `scripts/check-shfmt.sh` runs `shfmt -i 2 -d` on the same
-files. It does not write. `scripts/format-dockerfmt.sh` runs
-`dockerfmt --write` on the Dockerfile and Containerfile files. The check
-script `scripts/check-dockerfmt.sh` runs `dockerfmt --check` on the same
-files. It does not write. CI runs the check scripts only. Commit the
-changed files after `make format`.
+files. The check script does not write.
+
+`scripts/format-dockerfmt.sh` runs `dockerfmt --write` on the Dockerfile
+and Containerfile files. The check script `scripts/check-dockerfmt.sh`
+runs `dockerfmt --check` on the same files. The check script does not
+write.
+
+The workflow runs the check scripts only. Commit the changed files after
+`make format`.
 
 ## Add a new check
 
@@ -166,14 +171,14 @@ changed files after `make format`.
    set -euo pipefail
    ```
 
-3. Check each required command with `command -v`. Print a clear
-   `error:` message to stderr when a command is missing. Exit non-zero.
+3. Check each required command with `command -v`. Print an `error:`
+   message to stderr when a command is missing. Exit non-zero.
 
 4. Change to the repository root with `git rev-parse --show-toplevel`.
    Do not use a relative path or a hardcoded path.
 
-5. Collect files from git. Include tracked and untracked files. Exclude
-   ignored files. Do not use a hardcoded file list.
+5. Collect files from `git`. Include tracked and untracked files.
+   Exclude ignored files. Do not use a hardcoded file list.
 
    ```bash
    mapfile -d '' -t files < <(
@@ -185,48 +190,50 @@ changed files after `make format`.
    `--exclude-standard` removes ignored files.
 
 6. Run the tool in read-only mode. Do not pass a fix flag. Print one
-   short result line. Return non-zero on failure. `set -e` stops the
-   script when the tool exits non-zero.
+   short result line. Return non-zero when the tool fails. `set -e`
+   stops the script when the tool exits non-zero.
 
 7. Add the tool to [`mise.toml`](../mise.toml) when it is a development
    dependency. Run `mise use <tool>@<major>`. Do not use `latest`. Do
    not use an exact pin unless you have a reason. A major constraint
    permits bug and security fixes.
 
-   Some tools use a backend prefix in the mise key. The key can differ
-   from the command name. This command writes
+   Some tools use a backend prefix in the `mise` key. The key can differ
+   from the command name. Run this command to write
    `"npm:markdownlint-cli2" = "0"` in `mise.toml`:
 
    ```bash
    mise use npm:markdownlint-cli2@0
    ```
 
-   The same command provides the `markdownlint-cli2` command. Check the
-   command with `command -v`, not the mise key:
+   The same command also provides the `markdownlint-cli2` command. Run
+   this command to check that the command is on `PATH`:
 
    ```bash
    command -v markdownlint-cli2
    ```
 
+   Do not check the `mise` key.
+
 8. Run `make ci`. `scripts/ci.sh` finds the new file automatically. The
-   file name sets the run order. A Makefile convenience target is
+   file name sets the run order. A `Makefile` convenience target is
    optional for the pipeline. Add one when the repository convention
    expects a direct target.
 
-9. Test the failure path. Add a file with a known violation. Run
-   `make ci` and confirm a non-zero exit. Remove the file and confirm a
-   zero exit.
+9. Check the behavior when a check fails. Add a file with a known
+   violation. Run `make ci`. Check for a non-zero exit. Remove the
+   file. Check for an exit status of zero.
 
 ### When existing files fail the check
 
 Fix the files. Do not disable the check or a rule. Add the check before
-the files that must pass it. This order stops a bad file from entering
-the repository. Do not add a config file that disables a rule.
+the files that must pass it. Then a bad file cannot enter the
+repository. Do not add a config file that disables a rule.
 
 ### Example check script
 
-This example is not in the repository. Do not add this file. It shows
-the required structure.
+The example is not in the repository. Do not add this file. The
+example shows the required structure.
 
 ```bash
 #!/usr/bin/env bash
@@ -259,17 +266,18 @@ yamllint --strict "${files[@]}"
 echo "checked ${#files[@]} YAML files"
 ```
 
-The example file would be `scripts/check-yaml.sh`. Its tool would be
-installed with `mise use yamllint@1`.
+The example file would be `scripts/check-yaml.sh`. You would install its
+tool with `mise use yamllint@1`.
 
-A Makefile target is optional. Add the target name to the `.PHONY` line
-at the top of the [Makefile](../Makefile) when you add a target.
+A `Makefile` target is optional. Add the target name to the `.PHONY`
+line at the top of the [`Makefile`](../Makefile). Do this when you add a
+target.
 
-## Use mise
+## Use `mise`
 
-mise is the local installer for development tools. It does not start the
-check pipeline. No check script requires mise. The scripts use tools from
-`PATH`.
+`mise` is the local installer for development tools. It does not start
+the check pipeline. No check script requires `mise`. The scripts use
+tools from `PATH`.
 
 Keep one tool version list in [`mise.toml`](../mise.toml). A second list
 can drift and produce different results.
@@ -278,12 +286,12 @@ can drift and produce different results.
 
 The workflow [`ci.yml`](../.github/workflows/ci.yml) runs the checks on
 GitHub Actions. It runs on each pull request and each push to `main`.
-The workflow has nine jobs: `mise`, `jactionlint`, `bash`, `shfmt`,
-`commits`, `markdown`, `hadolint`, `dockerfmt`, and `zizmor`.
+The workflow contains nine jobs: `mise`, `jactionlint`, `bash`,
+`shfmt`, `commits`, `markdown`, `hadolint`, `dockerfmt`, and `zizmor`.
 
 Each job uses the `jdxcode/mise` image on the `ubuntu-24.04` runner. The
-image provides mise, git, curl, and CA certificates. It provides no
-project tool.
+image provides `mise`, `git`, `curl`, and CA certificates. It provides
+no project tool.
 
 Pin each image by digest and each action by commit SHA. Add a comment
 that names the version of the pin. A fixed version gives the same result
@@ -299,18 +307,20 @@ The workflow has no release job. The release stays local. The
 
 A check script follows these rules:
 
-- No network access. A check that downloads data is not deterministic.
-- No writes to the worktree. Use a temporary directory for scratch files.
-- No auto-fix. Report the problem and exit non-zero.
-- No secrets. A check must not need credentials.
-- Deterministic output. The same input gives the same result.
-- Short output. Print a result line and the tool output that explains a
-  failure.
-- Exit non-zero on failure.
+- Do not use the network. A check that downloads data is not
+  deterministic.
+- Do not write to the working tree. Use a temporary directory for
+  scratch files.
+- Do not fix files. Report the problem and exit non-zero.
+- Do not use secrets. A check must not need credentials.
+- Write deterministic output. The same input gives the same result.
+- Write short output. Print a result line. Print the tool output when a
+  check fails.
+- Exit non-zero when a check fails.
 
 ## Troubleshooting
 
-### A required tool is not on PATH
+### A required tool is not on `PATH`
 
 Install the missing tool with your system package manager. Then open a
 new shell.
@@ -321,10 +331,10 @@ If the tool is still absent, the check prints this message:
 error: shellcheck is not on PATH. Install shellcheck first.
 ```
 
-### The mise config check did not run
+### The `mise` config check did not run
 
-This message is expected when mise is absent. `scripts/check-mise.sh`
-exits 0. The check runs when `mise` is on `PATH`.
+`scripts/check-mise.sh` exits 0 when `mise` is absent. The check runs
+when `mise` is on `PATH`.
 
 The check prints this message:
 
@@ -340,7 +350,8 @@ Run this command:
 make hooks
 ```
 
-The target sets the hook path and makes the hooks executable. Then run:
+The target sets the hook path and makes the hooks executable. Then run
+this command:
 
 ```bash
 git config --get core.hooksPath
@@ -352,10 +363,10 @@ The output must be `.githook`. If the output is empty or different, run
 ### A check passes on one machine but fails on another
 
 A tool version or the environment differs. Align the tool with
-[`mise.toml`](../mise.toml). Remove network access and write side effects
-from the check. Reproduce the failure in a clean checkout.
+[`mise.toml`](../mise.toml). Remove network access and file writes from
+the check. Reproduce the problem in a clean checkout.
 
 ### `--no-verify` bypasses the hooks
 
-`--no-verify` skips the commit or push hooks. Use it only in an emergency.
-Do not use it to merge a failing change.
+`--no-verify` skips the commit or push hooks. Use it only in an
+emergency. Do not use it to merge a failing change.
