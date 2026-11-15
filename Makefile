@@ -1,7 +1,7 @@
 SHELL := bash
 .DEFAULT_GOAL := help
 
-.PHONY: help ci check-bash check-commits check-markdown check-mise hooks
+.PHONY: help ci check-bash check-commits check-markdown check-mise hooks release
 
 help: ## Show this help.
 	@echo "Targets:"
@@ -25,3 +25,6 @@ check-mise: ## Check the mise config file when mise is available.
 hooks: ## Install the git hooks in .githook.
 	git config core.hooksPath .githook
 	chmod +x .githook/commit-msg .githook/pre-commit .githook/pre-push
+
+release: ## Bump the version and update the changelog.
+	cog bump --auto
