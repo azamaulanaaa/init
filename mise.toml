@@ -3,6 +3,7 @@
 
 [tools]
 cocogitto = "7"
+jactionlint = "2"
 make = "4"
 "npm:markdownlint-cli2" = "0"
 shellcheck = "0"
