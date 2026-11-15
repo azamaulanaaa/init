@@ -1,0 +1,4 @@
+# Ignore local environment files. Keep the example template in version control.
+.env
+.env.*
+!.env.example
