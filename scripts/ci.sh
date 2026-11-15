@@ -13,7 +13,7 @@ shopt -s nullglob
 checks=(scripts/check-*.sh)
 shopt -u nullglob
 
-if (( ${#checks[@]} == 0 )); then
+if ((${#checks[@]} == 0)); then
   echo "error: no check scripts found in scripts/." >&2
   exit 1
 fi

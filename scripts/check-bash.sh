@@ -22,10 +22,10 @@ for path in "${listed[@]}"; do
     continue
   fi
   case "$path" in
-    *.sh | *.bash | *.bats)
-      files+=("$path")
-      continue
-      ;;
+  *.sh | *.bash | *.bats)
+    files+=("$path")
+    continue
+    ;;
   esac
   first_line=
   IFS= read -r first_line <"$path" || true
@@ -41,7 +41,7 @@ for path in "${listed[@]}"; do
   done
 done
 
-if (( ${#files[@]} == 0 )); then
+if ((${#files[@]} == 0)); then
   echo "no bash files"
   exit 0
 fi

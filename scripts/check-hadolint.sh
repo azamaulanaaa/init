@@ -20,7 +20,7 @@ mapfile -d '' -t files < <(
     '*.dockerfile' '*.containerfile'
 )
 
-if (( ${#files[@]} == 0 )); then
+if ((${#files[@]} == 0)); then
   echo "no Dockerfile or Containerfile files"
   exit 0
 fi

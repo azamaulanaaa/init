@@ -20,7 +20,7 @@ mapfile -d '' -t files < <(
     '*.md' ':(exclude)CHANGELOG.md'
 )
 
-if (( ${#files[@]} == 0 )); then
+if ((${#files[@]} == 0)); then
   echo "no Markdown files"
   exit 0
 fi

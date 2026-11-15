@@ -19,7 +19,7 @@ mapfile -d '' -t files < <(
     '.github/workflows/*.yml' '.github/workflows/*.yaml'
 )
 
-if (( ${#files[@]} == 0 )); then
+if ((${#files[@]} == 0)); then
   echo "no GitHub Actions workflow files"
   exit 0
 fi
