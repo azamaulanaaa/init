@@ -7,7 +7,7 @@ and release a version.
 
 You need `git` and `make`.
 
-The checks need `jactionlint`, `cog`, `markdownlint-cli2`,
+The checks need `cog`, `hadolint`, `jactionlint`, `markdownlint-cli2`,
 `shellcheck`, and `zizmor`. If you use [mise](https://mise.jdx.dev/),
 run `mise install` to install them. Then activate mise in your shell so
 the installed tools are on `PATH`. The mise documentation describes the
@@ -36,6 +36,7 @@ Run one check with a Makefile target:
 make check-jactionlint
 make check-bash
 make check-commits
+make check-hadolint
 make check-markdown
 make check-mise
 make check-zizmor
