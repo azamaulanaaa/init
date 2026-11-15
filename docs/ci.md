@@ -53,9 +53,9 @@ stops the run. The exit status is non-zero.
 
 ### Prerequisites
 
-You need `git` and `make`. The checks need `cog`, `dockerfmt`,
-`hadolint`, `jactionlint`, `markdownlint-cli2`, `shellcheck`, `shfmt`,
-and `zizmor` on `PATH`. `mise` is optional. Run `make help` to list the
+You need `git` and `make`. The checks need `cog`, `dclint`,
+`dockerfmt`, `hadolint`, `jactionlint`, `markdownlint-cli2`, `shellcheck`,
+`shfmt`, and `zizmor` on `PATH`. `mise` is optional. Run `make help` to list the
 available targets.
 
 ### Run all checks
@@ -89,6 +89,7 @@ Run these commands to check one area at a time:
 make check-jactionlint
 make check-bash
 make check-commits
+make check-dclint
 make check-dockerfmt
 make check-hadolint
 make check-markdown
@@ -99,7 +100,8 @@ make check-zizmor
 
 These targets call `scripts/check-jactionlint.sh`,
 `scripts/check-bash.sh`, `scripts/check-commits.sh`,
-`scripts/check-dockerfmt.sh`, `scripts/check-hadolint.sh`,
+`scripts/check-dclint.sh`, `scripts/check-dockerfmt.sh`,
+`scripts/check-hadolint.sh`,
 `scripts/check-markdown.sh`, `scripts/check-mise.sh`,
 `scripts/check-shfmt.sh`, and `scripts/check-zizmor.sh`.
 
@@ -131,14 +133,15 @@ make format
 prints `run: <script>` before each script. It stops when a formatter
 fails. It prints `all formatting applied (N scripts)` after the last
 script. When no format script exists, it prints `no format scripts` and
-exits 0. The run includes `scripts/format-shfmt.sh` and
-`scripts/format-dockerfmt.sh`.
+exits 0. The run includes `scripts/format-shfmt.sh`,
+`scripts/format-dockerfmt.sh`, and `scripts/format-dclint.sh`.
 
 Run these commands to apply one formatter at a time:
 
 ```bash
 make format-shfmt
 make format-dockerfmt
+make format-dclint
 ```
 
 `scripts/format-shfmt.sh` runs `shfmt -i 2 -w` on the bash files. The
@@ -149,6 +152,10 @@ files. The check script does not write.
 and Containerfile files. The check script `scripts/check-dockerfmt.sh`
 runs `dockerfmt --check` on the same files. The check script does not
 write.
+
+`scripts/format-dclint.sh` runs `dclint --fix` on the Docker Compose
+files. The check script `scripts/check-dclint.sh` runs `dclint` on the same
+files. The check script does not write.
 
 The workflow runs the check scripts only. Commit the changed files after
 `make format`.
@@ -286,8 +293,9 @@ can drift and produce different results.
 
 The workflow [`ci.yml`](../.github/workflows/ci.yml) runs the checks on
 GitHub Actions. It runs on each pull request and each push to `main`.
-The workflow contains nine jobs: `mise`, `jactionlint`, `bash`,
-`shfmt`, `commits`, `markdown`, `hadolint`, `dockerfmt`, and `zizmor`.
+The workflow contains ten jobs: `mise`, `jactionlint`, `bash`,
+`shfmt`, `commits`, `markdown`, `hadolint`, `dockerfmt`, `dclint`, and
+`zizmor`.
 
 Each job uses the `jdxcode/mise` image on the `ubuntu-24.04` runner. The
 image provides `mise`, `git`, `curl`, and CA certificates. It provides
