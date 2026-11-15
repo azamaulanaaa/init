@@ -83,11 +83,12 @@ Run a single check through the Makefile:
 ```bash
 make check-bash
 make check-commits
+make check-markdown
 make check-mise
 ```
 
 These targets call `scripts/check-bash.sh`, `scripts/check-commits.sh`,
-and `scripts/check-mise.sh`.
+`scripts/check-markdown.sh`, and `scripts/check-mise.sh`.
 
 From the repository root, run a check script directly:
 
