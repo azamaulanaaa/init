@@ -1,7 +1,7 @@
 SHELL := bash
 .DEFAULT_GOAL := help
 
-.PHONY: help ci check-jactionlint check-bash check-commits check-markdown check-mise check-zizmor hooks release
+.PHONY: help ci check-jactionlint check-bash check-commits check-hadolint check-markdown check-mise check-zizmor hooks release
 
 help: ## Show this help.
 	@echo "Targets:"
@@ -18,6 +18,9 @@ check-bash: ## Check every bash file with shellcheck.
 
 check-commits: ## Check the commit history with cocogitto.
 	scripts/check-commits.sh
+
+check-hadolint: ## Check the Dockerfile and Containerfile files with hadolint.
+	scripts/check-hadolint.sh
 
 check-markdown: ## Check every Markdown file with markdownlint-cli2.
 	scripts/check-markdown.sh
