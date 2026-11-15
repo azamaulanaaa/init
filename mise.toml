@@ -1,0 +1,6 @@
+# mise installs local development dependencies only.
+# Git hooks and make do not use mise.
+
+[tools]
+make = "4"
+shellcheck = "0"
