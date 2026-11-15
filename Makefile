@@ -1,7 +1,7 @@
 SHELL := bash
 .DEFAULT_GOAL := help
 
-.PHONY: help ci check-bash check-commits check-markdown check-mise hooks release
+.PHONY: help ci check-jactionlint check-bash check-commits check-markdown check-mise hooks release
 
 help: ## Show this help.
 	@echo "Targets:"
@@ -9,6 +9,9 @@ help: ## Show this help.
 
 ci: ## Run every check.
 	scripts/ci.sh
+
+check-jactionlint: ## Check the GitHub Actions workflows with jactionlint.
+	scripts/check-jactionlint.sh
 
 check-bash: ## Check every bash file with shellcheck.
 	scripts/check-bash.sh
