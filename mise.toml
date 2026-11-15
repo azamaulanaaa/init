@@ -3,6 +3,7 @@
 
 [tools]
 cocogitto = "7"
+"github:reteps/dockerfmt" = "0"
 hadolint = "2"
 jactionlint = "2"
 make = "4"
