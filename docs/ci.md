@@ -49,9 +49,9 @@ stops the run. The exit status is non-zero.
 
 ### Prerequisites
 
-You need `git`, `hadolint`, `jactionlint`, `shellcheck`, and `zizmor`
-on `PATH`. You also need `make` to use the Makefile targets. `mise` is
-optional. Run `make help` to list the available targets.
+You need `git`, `hadolint`, `jactionlint`, `shellcheck`, `shfmt`, and
+`zizmor` on `PATH`. You also need `make` to use the Makefile targets.
+`mise` is optional. Run `make help` to list the available targets.
 
 ### Run all checks
 
@@ -87,13 +87,15 @@ make check-commits
 make check-hadolint
 make check-markdown
 make check-mise
+make check-shfmt
 make check-zizmor
 ```
 
 These targets call `scripts/check-jactionlint.sh`,
 `scripts/check-bash.sh`, `scripts/check-commits.sh`,
 `scripts/check-hadolint.sh`, `scripts/check-markdown.sh`,
-`scripts/check-mise.sh`, and `scripts/check-zizmor.sh`.
+`scripts/check-mise.sh`, `scripts/check-shfmt.sh`, and
+`scripts/check-zizmor.sh`.
 
 From the repository root, run a check script directly:
 
@@ -238,8 +240,8 @@ can drift and produce different results.
 
 The workflow [`ci.yml`](../.github/workflows/ci.yml) runs the checks on
 GitHub Actions. It runs on each pull request and each push to `main`.
-The workflow has seven jobs: `mise`, `jactionlint`, `bash`, `commits`,
-`hadolint`, `markdown`, and `zizmor`.
+The workflow has eight jobs: `mise`, `jactionlint`, `bash`, `shfmt`,
+`commits`, `hadolint`, `markdown`, and `zizmor`.
 
 Each job uses the `jdxcode/mise` image on the `ubuntu-24.04` runner. The
 image provides mise, git, curl, and CA certificates. It provides no

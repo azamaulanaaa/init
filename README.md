@@ -8,10 +8,10 @@ and release a version.
 You need `git` and `make`.
 
 The checks need `cog`, `hadolint`, `jactionlint`, `markdownlint-cli2`,
-`shellcheck`, and `zizmor`. If you use [mise](https://mise.jdx.dev/),
-run `mise install` to install them. Then activate mise in your shell so
-the installed tools are on `PATH`. The mise documentation describes the
-command for each shell.
+`shellcheck`, `shfmt`, and `zizmor`. If you use
+[mise](https://mise.jdx.dev/), run `mise install` to install them. Then
+activate mise in your shell so the installed tools are on `PATH`. The
+mise documentation describes the command for each shell.
 
 ## Setup
 
@@ -39,11 +39,15 @@ make check-commits
 make check-hadolint
 make check-markdown
 make check-mise
+make check-shfmt
 make check-zizmor
 ```
 
 `make check-mise` prints a skip message and exits 0 when mise is absent.
 `make help` lists every target.
+
+The checks are read-only. They report a problem and exit non-zero. They
+do not change files.
 
 GitHub Actions runs the same checks on pull requests and pushes to
 `main`. The workflow is `.github/workflows/ci.yml`. The

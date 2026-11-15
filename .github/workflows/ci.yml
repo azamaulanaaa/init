@@ -60,6 +60,22 @@ jobs:
       - name: Check the bash files
         run: scripts/check-bash.sh
 
+  shfmt:
+    name: shfmt
+    runs-on: ubuntu-24.04
+    container:
+      image: jdxcode/mise@sha256:05360b08fb68ace24d4814adaa6f36371584f6931782ead4891872049667af5a # jdxcode/mise:2026.11.8-debian
+    timeout-minutes: 10
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install shfmt
+        run: mise install shfmt
+      - name: Check the bash file format
+        run: scripts/check-shfmt.sh
+
   commits:
     name: commits
     runs-on: ubuntu-24.04

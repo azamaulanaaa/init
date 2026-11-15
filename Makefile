@@ -1,7 +1,7 @@
 SHELL := bash
 .DEFAULT_GOAL := help
 
-.PHONY: help ci check-jactionlint check-bash check-commits check-hadolint check-markdown check-mise check-zizmor hooks release
+.PHONY: help ci check-jactionlint check-bash check-commits check-hadolint check-markdown check-mise check-shfmt check-zizmor hooks release
 
 help: ## Show this help.
 	@echo "Targets:"
@@ -27,6 +27,9 @@ check-markdown: ## Check every Markdown file with markdownlint-cli2.
 
 check-mise: ## Check the mise config file when mise is available.
 	scripts/check-mise.sh
+
+check-shfmt: ## Check the bash file format with shfmt.
+	scripts/check-shfmt.sh
 
 check-zizmor: ## Check the GitHub Actions workflows with zizmor.
 	scripts/check-zizmor.sh
