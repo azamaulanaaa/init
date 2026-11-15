@@ -233,6 +233,27 @@ check pipeline. No check script requires mise. The scripts use tools from
 Keep one tool version list in [`mise.toml`](../mise.toml). A second list
 can drift and produce different results.
 
+## GitHub Actions
+
+The workflow [`ci.yml`](../.github/workflows/ci.yml) runs the checks on
+GitHub Actions. It runs on each pull request and each push to `main`.
+The workflow has six jobs: `mise`, `jactionlint`, `bash`, `commits`,
+`markdown`, and `zizmor`.
+
+Each job uses the `jdxcode/mise` image on the `ubuntu-24.04` runner. The
+image provides mise, git, curl, and CA certificates. It provides no
+project tool.
+
+Pin each image by digest and each action by commit SHA. Add a comment
+that names the version of the pin. A fixed version gives the same result
+on each run.
+
+The workflow has one job for each check script. Each job installs only
+the tool that its check needs. The `mise` job installs no tool.
+
+The workflow has no release job. The release stays local. The
+[release workflow](release.md) describes the release steps.
+
 ## Rules for a check script
 
 A check script follows these rules:
