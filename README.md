@@ -7,7 +7,7 @@ commit, and release a version.
 
 You need `git` and `make`.
 
-The checks need `cog`, `dockerfmt`, `hadolint`, `jactionlint`,
+The checks need `cog`, `dclint`, `dockerfmt`, `hadolint`, `jactionlint`,
 `markdownlint-cli2`, `shellcheck`, `shfmt`, and `zizmor`. If you use
 [`mise`](https://mise.jdx.dev/), run `mise install` to install these
 tools. Then activate `mise` in your shell so the installed tools are on
@@ -36,6 +36,7 @@ Run these commands to check one area at a time:
 make check-jactionlint
 make check-bash
 make check-commits
+make check-dclint
 make check-dockerfmt
 make check-hadolint
 make check-markdown
@@ -66,9 +67,11 @@ Run these commands to apply one formatter at a time:
 ```bash
 make format-shfmt
 make format-dockerfmt
+make format-dclint
 ```
 
 `make format-shfmt` formats the bash files with `shfmt`.
+`make format-dclint` fixes the Docker Compose files with `dclint`.
 `make format-dockerfmt` formats the Dockerfile and Containerfile files
 with `dockerfmt`. Commit the changed files after `make format`.
 
