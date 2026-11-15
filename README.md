@@ -49,6 +49,24 @@ make check-zizmor
 The checks are read-only. They report a problem and exit non-zero. They
 do not change files.
 
+## Format
+
+`make ci` does not write files. To apply the formatters, run:
+
+```bash
+make format
+```
+
+The target calls `scripts/format.sh`, and that script runs each
+`scripts/format-*.sh` file in name order. The run stops at the first
+failure. Run one formatter with a Makefile target:
+
+```bash
+make format-shfmt
+```
+
+Commit the changed files after `make format`.
+
 GitHub Actions runs the same checks on pull requests and pushes to
 `main`. The workflow is `.github/workflows/ci.yml`. The
 [check pipeline](docs/ci.md) describes it.
@@ -111,7 +129,7 @@ interface can change.
 
 - `.github/workflows/ci.yml`: The GitHub Actions check workflow.
 - `.githook/`: The three Git hooks.
-- `scripts/`: The check scripts and the `ci.sh` entry point.
+- `scripts/`: The check and format scripts, and the `ci.sh` entry point.
 - `docs/`: The check and release documents.
 - `cog.toml`: The Cocogitto settings for commits, changelog, and tags.
 - `Makefile`: The command targets for setup, checks, and release.

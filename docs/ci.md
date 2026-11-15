@@ -30,6 +30,9 @@ These commands and files make up the pipeline:
 - `scripts/ci.sh`: Runs every `scripts/check-*.sh` in name order. Stops
   at the first failure.
 - `make ci`: Runs `scripts/ci.sh`.
+- `scripts/format.sh`: Runs every `scripts/format-*.sh` in name order.
+  Stops at the first failure.
+- `make format`: Runs `scripts/format.sh`.
 - `.githook/commit-msg`: Runs `cog verify` on the commit message. A bad
   message stops the commit.
 - `.githook/pre-commit`: Runs `scripts/ci.sh` before each commit.
@@ -109,6 +112,34 @@ repository.
 
 `scripts/check-mise.sh` prints a skip warning and exits 0 when `mise` is
 absent. This behavior is intentional.
+
+### Format the files
+
+The checks are read-only. A check reports a problem and exits non-zero.
+It does not change a file. To change the files, use a format script.
+
+Run every formatter:
+
+```bash
+make format
+```
+
+`scripts/format.sh` runs each `scripts/format-*.sh` in name order. It
+prints `run: <script>` before each script. It stops at the first
+failure. After the last script it prints
+`all formatting applied (N scripts)`. When no format script exists, it
+prints `no format scripts` and exits 0.
+
+Run one formatter:
+
+```bash
+make format-shfmt
+```
+
+`scripts/format-shfmt.sh` runs `shfmt -i 2 -w` on the bash files.
+The check script `scripts/check-shfmt.sh` runs `shfmt -i 2 -d` on the
+same files. It does not write. Commit the changed files after
+`make format`.
 
 ## Add a new check
 

@@ -1,7 +1,7 @@
 SHELL := bash
 .DEFAULT_GOAL := help
 
-.PHONY: help ci check-jactionlint check-bash check-commits check-hadolint check-markdown check-mise check-shfmt check-zizmor hooks release
+.PHONY: help ci check-jactionlint check-bash check-commits check-hadolint check-markdown check-mise check-shfmt check-zizmor format format-shfmt hooks release
 
 help: ## Show this help.
 	@echo "Targets:"
@@ -33,6 +33,12 @@ check-shfmt: ## Check the bash file format with shfmt.
 
 check-zizmor: ## Check the GitHub Actions workflows with zizmor.
 	scripts/check-zizmor.sh
+
+format: ## Apply every formatter.
+	scripts/format.sh
+
+format-shfmt: ## Format every bash file with shfmt.
+	scripts/format-shfmt.sh
 
 hooks: ## Install the git hooks in .githook.
 	git config core.hooksPath .githook
