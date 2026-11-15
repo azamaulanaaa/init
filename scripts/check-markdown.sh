@@ -14,7 +14,11 @@ fi
 
 cd "$(git rev-parse --show-toplevel)"
 
-mapfile -d '' -t files < <(git ls-files -z --cached --others --exclude-standard -- '*.md')
+# The changelog is generated, so the check skips it.
+mapfile -d '' -t files < <(
+  git ls-files -z --cached --others --exclude-standard -- \
+    '*.md' ':(exclude)CHANGELOG.md'
+)
 
 if (( ${#files[@]} == 0 )); then
   echo "no Markdown files"
