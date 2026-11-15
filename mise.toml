@@ -5,6 +5,8 @@
 cocogitto = "7"
 jactionlint = "2"
 make = "4"
+# The markdown linter is an npm tool. It needs the Node.js runtime.
+node = "24"
 "npm:markdownlint-cli2" = "0"
 shellcheck = "0"
 zizmor = "1"
