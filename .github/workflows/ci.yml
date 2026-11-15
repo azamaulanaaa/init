@@ -1,0 +1,110 @@
+name: Checks
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mise:
+    name: mise
+    runs-on: ubuntu-24.04
+    container:
+      image: jdxcode/mise@sha256:05360b08fb68ace24d4814adaa6f36371584f6931782ead4891872049667af5a # jdxcode/mise:2026.11.8-debian
+    timeout-minutes: 10
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the mise config
+        run: scripts/check-mise.sh
+
+  jactionlint:
+    name: jactionlint
+    runs-on: ubuntu-24.04
+    container:
+      image: jdxcode/mise@sha256:05360b08fb68ace24d4814adaa6f36371584f6931782ead4891872049667af5a # jdxcode/mise:2026.11.8-debian
+    timeout-minutes: 10
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install jactionlint
+        run: mise install jactionlint
+      - name: Check the workflow files
+        run: scripts/check-jactionlint.sh
+
+  bash:
+    name: bash
+    runs-on: ubuntu-24.04
+    container:
+      image: jdxcode/mise@sha256:05360b08fb68ace24d4814adaa6f36371584f6931782ead4891872049667af5a # jdxcode/mise:2026.11.8-debian
+    timeout-minutes: 10
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install shellcheck
+        run: mise install shellcheck
+      - name: Check the bash files
+        run: scripts/check-bash.sh
+
+  commits:
+    name: commits
+    runs-on: ubuntu-24.04
+    container:
+      image: jdxcode/mise@sha256:05360b08fb68ace24d4814adaa6f36371584f6931782ead4891872049667af5a # jdxcode/mise:2026.11.8-debian
+    timeout-minutes: 10
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install cocogitto
+        run: mise install cocogitto
+      - name: Check the commit history
+        run: scripts/check-commits.sh
+
+  markdown:
+    name: markdown
+    runs-on: ubuntu-24.04
+    container:
+      image: jdxcode/mise@sha256:05360b08fb68ace24d4814adaa6f36371584f6931782ead4891872049667af5a # jdxcode/mise:2026.11.8-debian
+    timeout-minutes: 10
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install node and markdownlint-cli2
+        run: mise install node markdownlint-cli2
+      - name: Check the Markdown files
+        run: scripts/check-markdown.sh
+
+  zizmor:
+    name: zizmor
+    runs-on: ubuntu-24.04
+    container:
+      image: jdxcode/mise@sha256:05360b08fb68ace24d4814adaa6f36371584f6931782ead4891872049667af5a # jdxcode/mise:2026.11.8-debian
+    timeout-minutes: 10
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install zizmor
+        run: mise install zizmor
+      - name: Check the workflow files
+        run: scripts/check-zizmor.sh
