@@ -7,11 +7,11 @@ and release a version.
 
 You need `git` and `make`.
 
-The checks need `jactionlint`, `cog`, `markdownlint-cli2`, and
-`shellcheck`. If you use [mise](https://mise.jdx.dev/), run `mise install`
-to install them. Then activate mise in your shell so the installed tools
-are on `PATH`. The mise documentation describes the command for each
-shell.
+The checks need `jactionlint`, `cog`, `markdownlint-cli2`,
+`shellcheck`, and `zizmor`. If you use [mise](https://mise.jdx.dev/),
+run `mise install` to install them. Then activate mise in your shell so
+the installed tools are on `PATH`. The mise documentation describes the
+command for each shell.
 
 ## Setup
 
@@ -38,6 +38,7 @@ make check-bash
 make check-commits
 make check-markdown
 make check-mise
+make check-zizmor
 ```
 
 `make check-mise` prints a skip message and exits 0 when mise is absent.
