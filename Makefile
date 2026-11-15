@@ -1,7 +1,7 @@
 SHELL := bash
 .DEFAULT_GOAL := help
 
-.PHONY: help ci check-jactionlint check-bash check-commits check-dockerfmt check-hadolint check-markdown check-mise check-shfmt check-zizmor format format-shfmt hooks release
+.PHONY: help ci check-jactionlint check-bash check-commits check-dockerfmt check-hadolint check-markdown check-mise check-shfmt check-zizmor format format-shfmt format-dockerfmt hooks release
 
 help: ## Show this help.
 	@echo "Targets:"
@@ -42,6 +42,9 @@ format: ## Apply every formatter.
 
 format-shfmt: ## Format every bash file with shfmt.
 	scripts/format-shfmt.sh
+
+format-dockerfmt: ## Format the Dockerfile and Containerfile files with dockerfmt.
+	scripts/format-dockerfmt.sh
 
 hooks: ## Install the git hooks in .githook.
 	git config core.hooksPath .githook
