@@ -21,4 +21,4 @@ check-mise: ## Check the mise config file when mise is available.
 
 hooks: ## Install the git hooks in .githook.
 	git config core.hooksPath .githook
-	chmod +x .githook/pre-commit .githook/pre-push
+	chmod +x .githook/commit-msg .githook/pre-commit .githook/pre-push
