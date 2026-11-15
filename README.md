@@ -7,8 +7,8 @@ and release a version.
 
 You need `git` and `make`.
 
-The checks need `cog`, `hadolint`, `jactionlint`, `markdownlint-cli2`,
-`shellcheck`, `shfmt`, and `zizmor`. If you use
+The checks need `cog`, `dockerfmt`, `hadolint`, `jactionlint`,
+`markdownlint-cli2`, `shellcheck`, `shfmt`, and `zizmor`. If you use
 [mise](https://mise.jdx.dev/), run `mise install` to install them. Then
 activate mise in your shell so the installed tools are on `PATH`. The
 mise documentation describes the command for each shell.
@@ -36,6 +36,7 @@ Run one check with a Makefile target:
 make check-jactionlint
 make check-bash
 make check-commits
+make check-dockerfmt
 make check-hadolint
 make check-markdown
 make check-mise
@@ -63,9 +64,12 @@ failure. Run one formatter with a Makefile target:
 
 ```bash
 make format-shfmt
+make format-dockerfmt
 ```
 
-Commit the changed files after `make format`.
+`make format-shfmt` writes the bash file format with `shfmt`.
+`make format-dockerfmt` writes the Dockerfile and Containerfile format
+with `dockerfmt`. Commit the changed files after `make format`.
 
 GitHub Actions runs the same checks on pull requests and pushes to
 `main`. The workflow is `.github/workflows/ci.yml`. The
