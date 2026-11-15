@@ -1,7 +1,7 @@
 SHELL := bash
 .DEFAULT_GOAL := help
 
-.PHONY: help ci check-jactionlint check-bash check-commits check-dockerfmt check-hadolint check-markdown check-mise check-shfmt check-zizmor format format-shfmt format-dockerfmt hooks release
+.PHONY: help ci check-jactionlint check-bash check-commits check-dclint check-dockerfmt check-hadolint check-markdown check-mise check-shfmt check-zizmor format format-shfmt format-dockerfmt format-dclint hooks release
 
 help: ## Show this help.
 	@echo "Targets:"
@@ -18,6 +18,9 @@ check-bash: ## Check every bash file with shellcheck.
 
 check-commits: ## Check the commit history with cocogitto.
 	scripts/check-commits.sh
+
+check-dclint: ## Check the Docker Compose files with dclint.
+	scripts/check-dclint.sh
 
 check-dockerfmt: ## Check the Dockerfile and Containerfile files with dockerfmt.
 	scripts/check-dockerfmt.sh
@@ -45,6 +48,9 @@ format-shfmt: ## Format every bash file with shfmt.
 
 format-dockerfmt: ## Format the Dockerfile and Containerfile files with dockerfmt.
 	scripts/format-dockerfmt.sh
+
+format-dclint: ## Fix the Docker Compose files with dclint.
+	scripts/format-dclint.sh
 
 hooks: ## Install the git hooks in .githook.
 	git config core.hooksPath .githook
