@@ -3,6 +3,7 @@
 
 [tools]
 cocogitto = "7"
+hadolint = "2"
 jactionlint = "2"
 make = "4"
 # The markdown linter is an npm tool. It needs the Node.js runtime.
