@@ -1,7 +1,7 @@
 SHELL := bash
 .DEFAULT_GOAL := help
 
-.PHONY: help ci check-bash check-markdown check-mise hooks
+.PHONY: help ci check-bash check-commits check-markdown check-mise hooks
 
 help: ## Show this help.
 	@echo "Targets:"
@@ -12,6 +12,9 @@ ci: ## Run every check.
 
 check-bash: ## Check every bash file with shellcheck.
 	scripts/check-bash.sh
+
+check-commits: ## Check the commit history with cocogitto.
+	scripts/check-commits.sh
 
 check-markdown: ## Check every Markdown file with markdownlint-cli2.
 	scripts/check-markdown.sh
