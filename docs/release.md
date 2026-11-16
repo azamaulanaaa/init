@@ -77,6 +77,29 @@ The target runs `cog bump --auto`. The command has three steps:
 
 No CI release job exists. The release runs on the local machine.
 
+## Optional GitHub Release
+
+A GitHub Release is optional. The local `make release` flow stays the
+default. It updates the changelog, creates the version commit, and creates
+the tag. It does not create a GitHub Release.
+
+The workflow `.github/workflows/release.yml` creates the release. It runs
+only when you opt in. To opt in, push the version tag to GitHub. The tag
+must match `v*`, for example `v1.2.3`. Push the tag that `make release`
+created:
+
+```bash
+git push origin v1.2.3
+```
+
+The workflow then creates a GitHub Release for that tag. It uses the
+changelog section for that version as the release notes. If the changelog
+has no section for the version, the workflow uses the tag name as the
+release title.
+
+To stay local, do not push the tag. The workflow does not run. No GitHub
+Release is created.
+
 ## Dry run
 
 Run this command on the `main` branch to see the next version:
