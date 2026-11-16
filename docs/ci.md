@@ -326,9 +326,7 @@ can drift and produce different results.
 
 The workflow [`ci.yml`](../.github/workflows/ci.yml) runs the checks on
 GitHub Actions. It runs on each pull request and each push to `main`.
-The workflow contains thirteen jobs: `mise`, `jactionlint`, `bash`,
-`shfmt`, `commits`, `markdown`, `hadolint`, `dockerfmt`, `dclint`, `zizmor`,
-`gitleaks`, `editorconfig`, and `dependency-review`.
+The workflow has one matrix job with ten entries plus four extra jobs.
 
 Each check job uses the `jdxcode/mise` image on the `ubuntu-24.04` runner.
 The image provides `mise`, `git`, `curl`, and CA certificates. It provides
@@ -344,6 +342,29 @@ the tool that its check needs. The `mise` job installs no tool.
 
 The workflow has no release job. The release stays local. The
 [release workflow](release.md) describes the release steps.
+
+### Required status checks
+
+The fourteen job names are the status check names:
+
+- `mise`
+- `jactionlint`
+- `bash`
+- `shfmt`
+- `commits`
+- `markdown`
+- `hadolint`
+- `dockerfmt`
+- `dclint`
+- `zizmor`
+- `pr-title`
+- `gitleaks`
+- `editorconfig`
+- `dependency-review`
+
+Set these fourteen names as required status checks on the default branch.
+Configure branch protection or rulesets on GitHub. Set them in the
+repository settings. Do not set them in the repository files.
 
 ## Rules for a check script
 
