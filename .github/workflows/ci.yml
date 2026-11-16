@@ -25,38 +25,38 @@ jobs:
       matrix:
         include:
           # Add a check with one entry below. Set name to the check name.
-          # Set install to the full `mise install` command. Set script to
-          # the check script path. Use install: '' when the check needs
+          # Set install_args to the tools that mise installs. Set script to
+          # the check script path. Use install_args: '' when the check needs
           # no tool.
           - name: mise
-            install: ''
+            install_args: ''
             script: scripts/check-mise.sh
           - name: jactionlint
-            install: mise install jactionlint
+            install_args: jactionlint
             script: scripts/check-jactionlint.sh
           - name: bash
-            install: mise install shellcheck
+            install_args: shellcheck
             script: scripts/check-bash.sh
           - name: shfmt
-            install: mise install shfmt
+            install_args: shfmt
             script: scripts/check-shfmt.sh
           - name: commits
-            install: mise install cocogitto
+            install_args: cocogitto
             script: scripts/check-commits.sh
           - name: markdown
-            install: mise install node markdownlint-cli2
+            install_args: "node markdownlint-cli2"
             script: scripts/check-markdown.sh
           - name: hadolint
-            install: mise install hadolint
+            install_args: hadolint
             script: scripts/check-hadolint.sh
           - name: dockerfmt
-            install: mise install github:reteps/dockerfmt
+            install_args: github:reteps/dockerfmt
             script: scripts/check-dockerfmt.sh
           - name: dclint
-            install: mise install node npm:dclint
+            install_args: "node npm:dclint"
             script: scripts/check-dclint.sh
           - name: zizmor
-            install: mise install zizmor
+            install_args: zizmor
             script: scripts/check-zizmor.sh
     steps:
       - name: Check out the repository
@@ -70,9 +70,13 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Install tools
-        if: matrix.install != ''
-        run: ${{ matrix.install }}
+      - name: Install tools with cache
+        if: matrix.install_args != ''
+        uses: jdx/mise-action@94c60b39bc2d90ab2f9bab27f38d3cc4812c1834 # v5.1.0
+        with:
+          cache: true
+          version: "2026.11.8"
+          install_args: ${{ matrix.install_args }}
       - name: Trust the checkout directory
         if: matrix.name == 'commits'
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
