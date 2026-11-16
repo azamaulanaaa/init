@@ -326,13 +326,14 @@ can drift and produce different results.
 
 The workflow [`ci.yml`](../.github/workflows/ci.yml) runs the checks on
 GitHub Actions. It runs on each pull request and each push to `main`.
-The workflow contains twelve jobs: `mise`, `jactionlint`, `bash`,
+The workflow contains thirteen jobs: `mise`, `jactionlint`, `bash`,
 `shfmt`, `commits`, `markdown`, `hadolint`, `dockerfmt`, `dclint`, `zizmor`,
-`gitleaks`, and `editorconfig`.
+`gitleaks`, `editorconfig`, and `dependency-review`.
 
-Each job uses the `jdxcode/mise` image on the `ubuntu-24.04` runner. The
-image provides `mise`, `git`, `curl`, and CA certificates. It provides
-no project tool.
+Each check job uses the `jdxcode/mise` image on the `ubuntu-24.04` runner.
+The image provides `mise`, `git`, `curl`, and CA certificates. It provides
+no project tool. The `dependency-review` job runs only on pull requests.
+This job needs GitHub Advanced Security for private repositories.
 
 Pin each image by digest and each action by commit SHA. Add a comment
 that names the version of the pin. A fixed version gives the same result
