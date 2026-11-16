@@ -1,7 +1,7 @@
 SHELL := bash
 .DEFAULT_GOAL := help
 
-.PHONY: help ci check-jactionlint check-bash check-commits check-dclint check-dockerfmt check-hadolint check-markdown check-mise check-shfmt check-zizmor format format-shfmt format-dockerfmt format-dclint hooks release
+.PHONY: help ci smolvm smolvm-pack smolvm-clean smolvm-exec smolvm-preflight smolvm-verify check-jactionlint check-bash check-commits check-dclint check-dockerfmt check-hadolint check-markdown check-mise check-shfmt check-zizmor format format-shfmt format-dockerfmt format-dclint hooks release
 
 help: ## Show this help.
 	@echo "Targets:"
@@ -9,6 +9,24 @@ help: ## Show this help.
 
 ci: ## Run every check.
 	scripts/ci.sh
+
+smolvm: ## Run the checks inside a smolvm microVM, or on the host as a fallback.
+	scripts/smolvm.sh
+
+smolvm-pack: ## Build the cached smolvm pack for the microVM.
+	smol/pack-build.sh
+
+smolvm-clean: ## Remove the cached smolvm packs and delete dangling smolvm machines.
+	scripts/smolvm-clean.sh
+
+smolvm-exec: ## Run an arbitrary command inside the microVM (ARGS='...').
+	@scripts/smolvm-exec.sh "$(ARGS)"
+
+smolvm-preflight: ## Probe whether this host is ready for the smolvm microVM.
+	smol/preflight.sh
+
+smolvm-verify: ## Verify the isolation of the microVM from inside and outside the guest.
+	smol/verify.sh
 
 check-jactionlint: ## Check the GitHub Actions workflows with jactionlint.
 	scripts/check-jactionlint.sh
