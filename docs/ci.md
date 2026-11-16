@@ -78,9 +78,9 @@ propagates to the host.
 ### Prerequisites
 
 You need `git` and `make`. The checks need `cog`, `dclint`,
-`dockerfmt`, `hadolint`, `jactionlint`, `markdownlint-cli2`, `shellcheck`,
-`shfmt`, and `zizmor` on `PATH`. `mise` is optional. Run `make help` to list
-the available targets.
+`dockerfmt`, `gitleaks`, `hadolint`, `jactionlint`, `markdownlint-cli2`,
+`shellcheck`, `shfmt`, and `zizmor` on `PATH`. `mise` is optional. Run
+`make help` to list the available targets.
 
 `make ci` runs the checks inside a smolvm microVM when `smolvm` is on
 `PATH` and the host accelerator is available (`/dev/kvm` on Linux,
@@ -121,6 +121,7 @@ make check-bash
 make check-commits
 make check-dclint
 make check-dockerfmt
+make check-gitleaks
 make check-hadolint
 make check-markdown
 make check-mise
@@ -131,7 +132,7 @@ make check-zizmor
 These targets call `scripts/check-jactionlint.sh`,
 `scripts/check-bash.sh`, `scripts/check-commits.sh`,
 `scripts/check-dclint.sh`, `scripts/check-dockerfmt.sh`,
-`scripts/check-hadolint.sh`,
+`scripts/check-gitleaks.sh`, `scripts/check-hadolint.sh`,
 `scripts/check-markdown.sh`, `scripts/check-mise.sh`,
 `scripts/check-shfmt.sh`, and `scripts/check-zizmor.sh`.
 
@@ -323,9 +324,9 @@ can drift and produce different results.
 
 The workflow [`ci.yml`](../.github/workflows/ci.yml) runs the checks on
 GitHub Actions. It runs on each pull request and each push to `main`.
-The workflow contains ten jobs: `mise`, `jactionlint`, `bash`,
-`shfmt`, `commits`, `markdown`, `hadolint`, `dockerfmt`, `dclint`, and
-`zizmor`.
+The workflow contains eleven jobs: `mise`, `jactionlint`, `bash`,
+`shfmt`, `commits`, `markdown`, `hadolint`, `dockerfmt`, `dclint`, `zizmor`,
+and `gitleaks`.
 
 Each job uses the `jdxcode/mise` image on the `ubuntu-24.04` runner. The
 image provides `mise`, `git`, `curl`, and CA certificates. It provides

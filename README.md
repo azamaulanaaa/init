@@ -15,9 +15,9 @@ offline and mounts the repository read-only at `/workspace`. Run
 `make smolvm-verify` to check the isolation. See the
 [smolvm documentation](docs/smolvm.md).
 
-The checks need `cog`, `dclint`, `dockerfmt`, `hadolint`, `jactionlint`,
-`markdownlint-cli2`, `shellcheck`, `shfmt`, and `zizmor`. If you use
-[`mise`](https://mise.jdx.dev/), run `mise install` to install these
+The checks need `cog`, `dclint`, `dockerfmt`, `gitleaks`, `hadolint`,
+`jactionlint`, `markdownlint-cli2`, `shellcheck`, `shfmt`, and `zizmor`. If
+you use [`mise`](https://mise.jdx.dev/), run `mise install` to install these
 tools. Then activate `mise` in your shell so the installed tools are on
 `PATH`. The `mise` documentation describes the command for each shell.
 
@@ -50,6 +50,7 @@ make check-bash
 make check-commits
 make check-dclint
 make check-dockerfmt
+make check-gitleaks
 make check-hadolint
 make check-markdown
 make check-mise
