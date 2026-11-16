@@ -90,6 +90,8 @@ jobs:
           persist-credentials: false
       - name: Install cocogitto
         run: mise install cocogitto
+      - name: Trust the checkout directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Check the commit history
         run: scripts/check-commits.sh
 

@@ -12,6 +12,9 @@ if ! command -v cog >/dev/null 2>&1; then
   exit 1
 fi
 
+# Git and libgit2 reject a repository that another user owns. Trust this checkout.
+git config --global --add safe.directory "${GITHUB_WORKSPACE:-$PWD}"
+
 cd "$(git rev-parse --show-toplevel)"
 
 # Check from the latest tag. Check all commits when the repository has no tag.
