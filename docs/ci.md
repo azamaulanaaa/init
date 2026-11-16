@@ -337,8 +337,8 @@ Pin each image by digest and each action by commit SHA. Add a comment
 that names the version of the pin. A fixed version gives the same result
 on each run.
 
-The workflow has one job for each check script. Each job installs only
-the tool that its check needs. The `mise` job installs no tool.
+One matrix job runs the ten check scripts. Each matrix entry sets the
+tool that its check needs. The matrix entry for `mise` installs no tool.
 
 The workflow has no release job. The release stays local. The
 [release workflow](release.md) describes the release steps.
@@ -357,10 +357,12 @@ The fourteen job names are the status check names:
 - `dockerfmt`
 - `dclint`
 - `zizmor`
-- `pr-title`
+- `PR title`
 - `gitleaks`
 - `editorconfig`
 - `dependency-review`
+
+`PR title` and `dependency-review` run only on pull requests.
 
 Set these fourteen names as required status checks on the default branch.
 Configure branch protection or rulesets on GitHub. Set them in the
