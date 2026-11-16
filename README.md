@@ -7,6 +7,14 @@ commit, and release a version.
 
 You need `git` and `make`.
 
+`make ci` runs the checks inside a smolvm microVM when `smolvm` is on
+`PATH` and the host accelerator is available: `/dev/kvm` on Linux,
+`kern.hv_support=1` on macOS with Apple Silicon. Without them, it
+prints a warning and runs the checks on the host. The microVM runs
+offline and mounts the repository read-only at `/workspace`. Run
+`make smolvm-verify` to check the isolation. See the
+[smolvm documentation](docs/smolvm.md).
+
 The checks need `cog`, `dclint`, `dockerfmt`, `hadolint`, `jactionlint`,
 `markdownlint-cli2`, `shellcheck`, `shfmt`, and `zizmor`. If you use
 [`mise`](https://mise.jdx.dev/), run `mise install` to install these
@@ -28,7 +36,11 @@ the three hook files executable.
 
 `make ci` runs every check. It calls `scripts/ci.sh`. That script runs
 each `scripts/check-*.sh` file in name order. The run stops when a check
-fails.
+fails. On a host with smolvm and a working accelerator, the checks run
+inside a smolvm microVM. The microVM is offline and mounts the
+repository read-only at `/workspace`. Without them, `make ci` prints a
+warning and runs the checks on the host. See the
+[smolvm documentation](docs/smolvm.md).
 
 Run these commands to check one area at a time:
 
@@ -49,6 +61,31 @@ make check-zizmor
 absent. `make help` lists every target.
 
 The checks do not change files. They report a problem and exit non-zero.
+
+Run these commands to use the sandbox:
+
+```bash
+make smolvm
+make smolvm-pack
+make smolvm-preflight
+make smolvm-verify
+make smolvm-exec
+make smolvm-clean
+```
+
+The sandbox is offline: the microVM runs a baked pack and asks the
+registry for nothing. The repository is mounted read-only at
+`/workspace`. `make smolvm-preflight` probes whether this host is
+ready. `make smolvm-verify` checks that the isolation holds from
+inside the guest and from the host. `make smolvm` runs the checks
+inside a smolvm microVM against the live working tree.
+`make smolvm-pack` builds the cached pack that the sandbox runs
+from. `make smolvm-clean` removes the cached packs and deletes
+dangling `smolvm-build-*` and `smolvm-run-*` machines.
+`make smolvm-exec ARGS='...'` runs one command inside the sandbox.
+The [smolvm documentation](docs/smolvm.md) describes the
+requirements, the cache key, the verify step, and the
+`SMOLVM_ENABLED` variable.
 
 ## Format
 
@@ -140,9 +177,11 @@ interface can change.
 - `.github/workflows/ci.yml` defines the check workflow for GitHub
   Actions.
 - `.githook/` contains the three Git hooks.
-- `scripts/` contains the check scripts, the format scripts, and the
-  `ci.sh` entry point.
-- `docs/` contains the check and release documents.
+- `scripts/` contains the check scripts, the format scripts, the
+  `ci.sh` entry point, and the `smolvm.sh`, `smolvm-clean.sh`, and
+  `smolvm-exec.sh` helpers.
+- `smol/` contains the smolvm base machine and the pack build script.
+- `docs/` contains the check, the release, and the smolvm documents.
 - `cog.toml` contains the `Cocogitto` settings for commits, changelog,
   and tags.
 - `Makefile` contains the command targets for setup, checks, and
@@ -156,6 +195,8 @@ interface can change.
   to add a check.
 - The [release workflow](docs/release.md) describes the commit format
   and the release steps.
+- The [smolvm](docs/smolvm.md) describes the smolvm microVM,
+  the pack cache, and the verified flow.
 
 ## License
 

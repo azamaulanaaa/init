@@ -20,6 +20,17 @@ start the check pipeline. The `pre-commit` and `pre-push` hooks run
 `scripts/ci.sh` directly. `make ci` runs the same script and does not
 call `mise`.
 
+`scripts/ci.sh` can hand the run to the smolvm microVM. After the
+`git` preflight, when `SMOLVM_ENABLED` is not `0` and `smolvm` is on
+`PATH` and the host accelerator is available (`/dev/kvm` on Linux,
+`kern.hv_support=1` on macOS with Apple Silicon), it runs
+`scripts/smolvm.sh` and the checks go to a microVM. Otherwise it
+prints a warning to stderr and runs the checks on the host. Set
+`SMOLVM_ENABLED=0` to force the host path. The microVM runs offline
+and mounts the repository read-only at
+`/workspace`. `make smolvm-verify` checks that the isolation holds.
+The [smolvm document](smolvm.md) describes this path.
+
 `make hooks` sets the hook path and makes the hooks executable.
 `scripts/check-mise.sh` uses `mise` only to check `mise.toml`. It skips
 that check when `mise` is absent.
@@ -29,8 +40,19 @@ that check when `mise` is absent.
 These commands and files form the pipeline:
 
 - `scripts/ci.sh` runs every `scripts/check-*.sh` in name order. It
-  stops when a check fails.
+  stops when a check fails. It can hand the run to the smolvm microVM
+  first. See the [smolvm document](smolvm.md).
 - `make ci` runs `scripts/ci.sh`.
+- `scripts/smolvm.sh` runs the checks inside a smolvm microVM against
+  the live working tree. `make smolvm` calls it. The microVM is
+  offline and the repository mount is read-only.
+- `smol/verify.sh` verifies the isolation from inside the guest and
+  from the host. `make smolvm-verify` calls it.
+- `smol/pack-build.sh` builds the cached pack that the microVM runs
+  from. `make smolvm-pack` calls it. `make smolvm-clean` removes
+  the cached packs and deletes dangling `smolvm-build-*` and
+  `smolvm-run-*` machines. `make smolvm-exec` runs one command
+  inside the microVM.
 - `scripts/format.sh` runs every `scripts/format-*.sh` in name order. It
   stops when a formatter fails.
 - `make format` runs `scripts/format.sh`.
@@ -47,7 +69,9 @@ required tool is missing from `PATH`, the hook fails.
 
 `scripts/ci.sh` prints `run: <script>` before each check. It prints
 `all checks passed (N scripts)` after the last check. A failed check
-stops the run. The exit status is non-zero.
+stops the run. The exit status is non-zero. When the microVM handoff
+happens, the guest prints these lines instead. The exit status still
+propagates to the host.
 
 ## Run the checks locally
 
@@ -55,8 +79,14 @@ stops the run. The exit status is non-zero.
 
 You need `git` and `make`. The checks need `cog`, `dclint`,
 `dockerfmt`, `hadolint`, `jactionlint`, `markdownlint-cli2`, `shellcheck`,
-`shfmt`, and `zizmor` on `PATH`. `mise` is optional. Run `make help` to list the
-available targets.
+`shfmt`, and `zizmor` on `PATH`. `mise` is optional. Run `make help` to list
+the available targets.
+
+`make ci` runs the checks inside a smolvm microVM when `smolvm` is on
+`PATH` and the host accelerator is available (`/dev/kvm` on Linux,
+`kern.hv_support=1` on macOS with Apple Silicon). Without them it
+prints a warning to stderr and runs the checks on the host. The
+[smolvm document](smolvm.md) lists the requirements.
 
 ### Run all checks
 
