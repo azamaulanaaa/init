@@ -155,7 +155,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install node and dclint
-        run: mise install node dclint
+        run: mise install node npm:dclint
       - name: Check the Docker Compose files
         run: scripts/check-dclint.sh
 
