@@ -2,3 +2,9 @@
 .env
 .env.*
 !.env.example
+
+# Ignore the local smolvm cache.
+.cache/
+
+# smolvm runtime state. Created by any smolvm CLI call from this directory.
+.smolvm/
