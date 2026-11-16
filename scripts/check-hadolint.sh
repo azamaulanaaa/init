@@ -16,8 +16,9 @@ cd "$(git rev-parse --show-toplevel)"
 
 mapfile -d '' -t files < <(
   git ls-files -z --cached --others --exclude-standard -- \
-    'Dockerfile' 'Dockerfile.*' 'Containerfile' 'Containerfile.*' \
-    '*.dockerfile' '*.containerfile'
+    ':(glob)**/Dockerfile' ':(glob)**/Dockerfile.*' \
+    ':(glob)**/Containerfile' ':(glob)**/Containerfile.*' \
+    ':(glob)**/*.dockerfile' ':(glob)**/*.containerfile'
 )
 
 if ((${#files[@]} == 0)); then
