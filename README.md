@@ -1,9 +1,6 @@
 # Guide
 
-![Checks](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)
-
-Replace `OWNER` and `REPO` in the badge with your GitHub owner and
-repository name.
+![Checks](https://github.com/azamaulanaaa/init/actions/workflows/ci.yml/badge.svg)
 
 The sections below show how to install the hooks, run the checks,
 commit, and release a version.
@@ -12,8 +9,6 @@ commit, and release a version.
 
 Replace these values before you use this template:
 
-- The badge owner and repo in `README.md`. Use your GitHub owner and
-  repository name.
 - The default branch name `main` in `cog.toml` and `ci.yml`. Use your
   default branch name.
 - The copyright holder in `LICENSE` and `README.md`. Use your name.
