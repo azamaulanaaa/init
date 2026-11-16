@@ -16,9 +16,10 @@ cd "$(git rev-parse --show-toplevel)"
 
 mapfile -d '' -t files < <(
   git ls-files -z --cached --others --exclude-standard -- \
-    'compose.yml' 'compose.yaml' 'compose.*.yml' 'compose.*.yaml' \
-    'docker-compose.yml' 'docker-compose.yaml' \
-    'docker-compose.*.yml' 'docker-compose.*.yaml'
+    ':(glob)**/compose.yml' ':(glob)**/compose.yaml' \
+    ':(glob)**/compose.*.yml' ':(glob)**/compose.*.yaml' \
+    ':(glob)**/docker-compose.yml' ':(glob)**/docker-compose.yaml' \
+    ':(glob)**/docker-compose.*.yml' ':(glob)**/docker-compose.*.yaml'
 )
 
 if ((${#files[@]} == 0)); then
