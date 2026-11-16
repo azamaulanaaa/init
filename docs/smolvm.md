@@ -88,34 +88,34 @@ Still unverified:
 before the checks run, `scripts/ci.sh` does the following:
 
 1. If `SMOLVM_ENABLED=0`, it skips the detection and runs the
-   checks natively. No warning is printed. The microVM sets
-   `SMOLVM_ENABLED=0` in the guest command, so this case means the
-   checks are already inside the microVM. Any other value, or an
-   unset variable, takes the auto path in step 2.
+    checks natively. No warning is printed. The microVM sets
+    `SMOLVM_ENABLED=0` in the guest command, so this case means the
+    checks are already inside the microVM. Any other value, or an
+    unset variable, takes the auto path in step 2.
 2. Else if `smolvm` is on `PATH` and the host accelerator is
-   available, it `exec`s `scripts/smolvm.sh`. The detection is
-   `/dev/kvm` on Linux and `kern.hv_support=1` on macOS with Apple
-   Silicon.
+    available, it `exec`s `scripts/smolvm.sh`. The detection is
+    `/dev/kvm` on Linux and `kern.hv_support=1` on macOS with Apple
+    Silicon.
 3. Else it prints a loud warning to stderr and runs the checks on
-   the host as before.
+    the host as before.
 
 `scripts/smolvm.sh` does the following:
 
 1. Detects `smolvm` and the host accelerator. If either is missing,
-   it prints the loud warning and `exec`s the host checks with
-   `SMOLVM_ENABLED=0`.
+    it prints the loud warning and `exec`s the host checks with
+    `SMOLVM_ENABLED=0`.
 2. Computes the pack cache key. The key is the SHA-256 of the
-   `sha256sum` lines of `mise.toml` and every `smol/*.smolfile`.
+    `sha256sum` lines of `mise.toml` and every `smol/*.smolfile`.
 3. Builds the pack when `.cache/smolvm/ci-<key>.smolmachine` is
-   missing. It calls `smol/pack-build.sh` for the build.
+    missing. It calls `smol/pack-build.sh` for the build.
 4. Runs `smolvm machine run --from <pack> --timeout 10m -v
-   "$PWD":/workspace:ro -- bash -lc 'cd /workspace &&
-   SMOLVM_ENABLED=0 bash scripts/ci.sh'`. The VM is discarded on
-   exit. No persistent machine is created. The `--timeout` value
-   comes from `SMOLVM_TIMEOUT` and defaults to `10m`.
+    "$PWD":/workspace:ro -- bash -lc 'cd /workspace &&
+    SMOLVM_ENABLED=0 bash scripts/ci.sh'`. The VM is discarded on
+    exit. No persistent machine is created. The `--timeout` value
+    comes from `SMOLVM_TIMEOUT` and defaults to `10m`.
 5. The exit code of the checks propagates. The exit code of
-   `machine run` in foreground mode is used as the exit code of
-   `scripts/smolvm.sh`.
+    `machine run` in foreground mode is used as the exit code of
+    `scripts/smolvm.sh`.
 
 The loud warning looks like this:
 
@@ -156,25 +156,25 @@ a property of the machine.
 `make smolvm-pack` builds the pack. The build does the following:
 
 1. Creates a machine from `smol/base.smolfile`. The repository is
-   mounted at `/workspace` with the `:ro` flag.
+    mounted at `/workspace` with the `:ro` flag.
 2. Installs `bash`, `ca-certificates`, `curl`, and `git` with
-   `apt-get`.
+    `apt-get`.
 3. Installs mise to `/usr/local/bin/mise` with the mise.run script.
 4. Runs `mise install` in `/workspace`. The tools land in the pack.
 5. Runs `mise cache clear` to remove the download cache from the
-   pack. The installed tools are not removed.
+    pack. The installed tools are not removed.
 6. Adds `safe.directory /workspace` to the root git configuration.
 7. Adds the mise shims to the login shell PATH through
-   `/etc/profile.d/mise.sh`. It also links the shims into
-   `/usr/local/bin` so non-login shells find the tools.
+    `/etc/profile.d/mise.sh`. It also links the shims into
+    `/usr/local/bin` so non-login shells find the tools.
 8. Stops the machine.
 9. Runs `smolvm pack create --from-vm <name> --cpus 1 --mem 512
-   -o .cache/smolvm/ci-<key>`. On smolvm v1.35.1 the `-o` value names
-   the executable stub. The sidecar `ci-<key>.smolmachine` is created
-   automatically as `<output>.smolmachine`. An `-o` value that ends in
-   `.smolmachine` is rejected. `--single-file` does not change this.
-   The stub is capped at 1 vCPU and 512 MiB of memory. The caps are
-   not reservations.
+    -o .cache/smolvm/ci-<key>`. On smolvm v1.35.1 the `-o` value names
+    the executable stub. The sidecar `ci-<key>.smolmachine` is created
+    automatically as `<output>.smolmachine`. An `-o` value that ends in
+    `.smolmachine` is rejected. `--single-file` does not change this.
+    The stub is capped at 1 vCPU and 512 MiB of memory. The caps are
+    not reservations.
 10. Deletes the build machine.
 
 If a failure happens before the pack create succeeds, the trap
@@ -262,16 +262,16 @@ The verify step does two halves.
 From inside the guest:
 
 1. `touch /workspace/ISOLATION_PROBE` must fail. A success means the
-   read-only mount leaked.
+    read-only mount leaked.
 2. A TCP connect to `example.com:80` with bash `/dev/tcp` must fail.
-   No external probe tool is needed. If the guest bash has no
-   `/dev/tcp` support, the step prints `net=no_probe_tool` and fails.
-   It does not silently pass.
+    No external probe tool is needed. If the guest bash has no
+    `/dev/tcp` support, the step prints `net=no_probe_tool` and fails.
+    It does not silently pass.
 
 From the host afterwards:
 
 1. The repository has no `ISOLATION_PROBE` file. If the probe leaked,
-   the step deletes the file it created and reports a FAIL.
+    the step deletes the file it created and reports a FAIL.
 
 The step prints key=value lines:
 
@@ -378,12 +378,12 @@ a concern.
 `make smolvm-clean` does two things, in this order:
 
 1. It deletes the dangling sandbox machines. Only machines whose names
-   match `smolvm-build-*` (a failed or interrupted pack build) or
-   `smolvm-run-*` (the older run path) are deleted. The delete runs
-   with `--force --cascade`. Machines with every other name stay
-   untouched.
+    match `smolvm-build-*` (a failed or interrupted pack build) or
+    `smolvm-run-*` (the older run path) are deleted. The delete runs
+    with `--force --cascade`. Machines with every other name stay
+    untouched.
 2. It removes the `.cache/smolvm/` directory. This removes the
-   executable stub and the sidecar `.smolmachine` files.
+    executable stub and the sidecar `.smolmachine` files.
 
 When `smolvm` is not on `PATH`, the script prints `smolvm=not_found`
 and a note that the machine cleanup was skipped. The cache removal
@@ -496,47 +496,47 @@ These points come from the smolvm documentation and from reading the
 CLI reference.
 
 1. The per-run path uses `smolvm machine run --from` with `-v`.
-   `machine run` accepts `-v/--volume` and a `[COMMAND]...` argument.
-   It is the documented one-shot equivalent of `machine create --from`
-   plus `machine start`. Foreground exit-code propagation is the
-   documented normal mode. The pack has no
-   baked repository. The mount is supplied at run time.
+    `machine run` accepts `-v/--volume` and a `[COMMAND]...` argument.
+    It is the documented one-shot equivalent of `machine create --from`
+    plus `machine start`. Foreground exit-code propagation is the
+    documented normal mode. The pack has no
+    baked repository. The mount is supplied at run time.
 2. `machine create` with a positional `[COMMAND]` sets a persistent
-   detached workload. Without a command, the image's ENTRYPOINT/CMD
-   runs detached on every start. For packs, the artifact supplies the
-   command. `machine run --from` takes the command as an argument, so
-   no detached workload is involved.
+    detached workload. Without a command, the image's ENTRYPOINT/CMD
+    runs detached on every start. For packs, the artifact supplies the
+    command. `machine run --from` takes the command as an argument, so
+    no detached workload is involved.
 3. On 2026-11-16 the exit code of `smolvm machine run` in foreground
-   mode propagated the guest command exit code on Linux x86_64 with
-   KVM. If it does not
-   on your version, `make smolvm` needs a check of the guest output
-   instead.
+    mode propagated the guest command exit code on Linux x86_64 with
+    KVM. If it does not
+    on your version, `make smolvm` needs a check of the guest output
+    instead.
 4. The `[artifact]` table in `smol/base.smolfile` is documented for
-   packs created from a Smolfile. The documentation does not state
-   whether it is read for `pack create --from-vm`. The build passes
-   `--cpus 1 --mem 512` as flags as well. Both mechanisms cap CPU and
-   memory at the same values on purpose. Caps are not reservations.
-   Whether the `[artifact]` table is honored for `--from-vm` packs is
-   not confirmed.
+    packs created from a Smolfile. The documentation does not state
+    whether it is read for `pack create --from-vm`. The build passes
+    `--cpus 1 --mem 512` as flags as well. Both mechanisms cap CPU and
+    memory at the same values on purpose. Caps are not reservations.
+    Whether the `[artifact]` table is honored for `--from-vm` packs is
+    not confirmed.
 5. The mise shims are added to `/etc/profile.d/mise.sh` for login
-   shells and linked into `/usr/local/bin` for other shells. The
-   checks pass inside the guest, so the tools resolve on `bash -lc`,
-   which sources `/etc/profile`.
+    shells and linked into `/usr/local/bin` for other shells. The
+    checks pass inside the guest, so the tools resolve on `bash -lc`,
+    which sources `/etc/profile`.
 6. `/dev/kvm` exists and is readable is used as the Linux KVM check.
-   This does not prove that the kernel allows a VM to start. A host
-   in a restricted container can read `/dev/kvm` and still fail to run
-   a VM. The loud warning does not cover this case. The preflight
-   probe has the same limit.
+    This does not prove that the kernel allows a VM to start. A host
+    in a restricted container can read `/dev/kvm` and still fail to run
+    a VM. The loud warning does not cover this case. The preflight
+    probe has the same limit.
 7. On macOS the detection was extended to `kern.hv_support=1`. The
-   macOS path is untested. The v1.24.0 to v1.29.0 `--oci-cache`
-   regression (#1819) does not apply to pack `--from` runs.
+    macOS path is untested. The v1.24.0 to v1.29.0 `--oci-cache`
+    regression (#1819) does not apply to pack `--from` runs.
 8. The pack build needs inbound network access to the Debian and
-   mise release endpoints. The check runs need no network. The guest
-   `apt-get` step is noninteractive.
+    mise release endpoints. The check runs need no network. The guest
+    `apt-get` step is noninteractive.
 9. The pack may carry `net=true` from the build machine's Smolfile.
-   If `make smolvm-verify` prints `inside_network=...actual=REACHED`,
-   open an issue. See
-   [What a REACHED result means](#what-a-reached-result-means).
+    If `make smolvm-verify` prints `inside_network=...actual=REACHED`,
+    open an issue. See
+    [What a REACHED result means](#what-a-reached-result-means).
 10. The `--timeout` backstop kills the guest command after the
     duration. What `machine run` does on a timeout kill is not
     measured.

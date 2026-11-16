@@ -78,9 +78,9 @@ propagates to the host.
 ### Prerequisites
 
 You need `git` and `make`. The checks need `cog`, `dclint`,
-`dockerfmt`, `gitleaks`, `hadolint`, `jactionlint`, `markdownlint-cli2`,
-`shellcheck`, `shfmt`, and `zizmor` on `PATH`. `mise` is optional. Run
-`make help` to list the available targets.
+`dockerfmt`, `editorconfig-checker`, `gitleaks`, `hadolint`, `jactionlint`,
+`markdownlint-cli2`, `shellcheck`, `shfmt`, and `zizmor` on `PATH`. `mise` is
+optional. Run `make help` to list the available targets.
 
 `make ci` runs the checks inside a smolvm microVM when `smolvm` is on
 `PATH` and the host accelerator is available (`/dev/kvm` on Linux,
@@ -121,6 +121,7 @@ make check-bash
 make check-commits
 make check-dclint
 make check-dockerfmt
+make check-editorconfig
 make check-gitleaks
 make check-hadolint
 make check-markdown
@@ -132,7 +133,8 @@ make check-zizmor
 These targets call `scripts/check-jactionlint.sh`,
 `scripts/check-bash.sh`, `scripts/check-commits.sh`,
 `scripts/check-dclint.sh`, `scripts/check-dockerfmt.sh`,
-`scripts/check-gitleaks.sh`, `scripts/check-hadolint.sh`,
+`scripts/check-editorconfig.sh`, `scripts/check-gitleaks.sh`,
+`scripts/check-hadolint.sh`,
 `scripts/check-markdown.sh`, `scripts/check-mise.sh`,
 `scripts/check-shfmt.sh`, and `scripts/check-zizmor.sh`.
 
@@ -194,73 +196,73 @@ The workflow runs the check scripts only. Commit the changed files after
 ## Add a new check
 
 1. Create `scripts/check-<area>.sh`. Replace `<area>` with the area name,
-   for example `yaml`. Make the file executable:
+    for example `yaml`. Make the file executable:
 
-   ```bash
-   chmod +x scripts/check-<area>.sh
-   ```
+    ```bash
+    chmod +x scripts/check-<area>.sh
+    ```
 
 2. Start the file with a shebang, a short comment, and strict shell
-   options:
+    options:
 
-   ```bash
-   #!/usr/bin/env bash
-   # Check every <area> file with <tool>.
-   set -euo pipefail
-   ```
+    ```bash
+    #!/usr/bin/env bash
+    # Check every <area> file with <tool>.
+    set -euo pipefail
+    ```
 
 3. Check each required command with `command -v`. Print an `error:`
-   message to stderr when a command is missing. Exit non-zero.
+    message to stderr when a command is missing. Exit non-zero.
 
 4. Change to the repository root with `git rev-parse --show-toplevel`.
-   Do not use a relative path or a hardcoded path.
+    Do not use a relative path or a hardcoded path.
 
 5. Collect files from `git`. Include tracked and untracked files.
-   Exclude ignored files. Do not use a hardcoded file list.
+    Exclude ignored files. Do not use a hardcoded file list.
 
-   ```bash
-   mapfile -d '' -t files < <(
-     git ls-files -z --cached --others --exclude-standard -- '<pattern>'
-   )
-   ```
+    ```bash
+    mapfile -d '' -t files < <(
+      git ls-files -z --cached --others --exclude-standard -- '<pattern>'
+    )
+    ```
 
-   `--cached` selects tracked files. `--others` selects untracked files.
-   `--exclude-standard` removes ignored files.
+    `--cached` selects tracked files. `--others` selects untracked files.
+    `--exclude-standard` removes ignored files.
 
 6. Run the tool in read-only mode. Do not pass a fix flag. Print one
-   short result line. Return non-zero when the tool fails. `set -e`
-   stops the script when the tool exits non-zero.
+    short result line. Return non-zero when the tool fails. `set -e`
+    stops the script when the tool exits non-zero.
 
 7. Add the tool to [`mise.toml`](../mise.toml) when it is a development
-   dependency. Run `mise use <tool>@<major>`. Do not use `latest`. Do
-   not use an exact pin unless you have a reason. A major constraint
-   permits bug and security fixes.
+    dependency. Run `mise use <tool>@<major>`. Do not use `latest`. Do
+    not use an exact pin unless you have a reason. A major constraint
+    permits bug and security fixes.
 
-   Some tools use a backend prefix in the `mise` key. The key can differ
-   from the command name. Run this command to write
-   `"npm:markdownlint-cli2" = "0"` in `mise.toml`:
+    Some tools use a backend prefix in the `mise` key. The key can differ
+    from the command name. Run this command to write
+    `"npm:markdownlint-cli2" = "0"` in `mise.toml`:
 
-   ```bash
-   mise use npm:markdownlint-cli2@0
-   ```
+    ```bash
+    mise use npm:markdownlint-cli2@0
+    ```
 
-   The same command also provides the `markdownlint-cli2` command. Run
-   this command to check that the command is on `PATH`:
+    The same command also provides the `markdownlint-cli2` command. Run
+    this command to check that the command is on `PATH`:
 
-   ```bash
-   command -v markdownlint-cli2
-   ```
+    ```bash
+    command -v markdownlint-cli2
+    ```
 
-   Do not check the `mise` key.
+    Do not check the `mise` key.
 
 8. Run `make ci`. `scripts/ci.sh` finds the new file automatically. The
-   file name sets the run order. A `Makefile` convenience target is
-   optional for the pipeline. Add one when the repository convention
-   expects a direct target.
+    file name sets the run order. A `Makefile` convenience target is
+    optional for the pipeline. Add one when the repository convention
+    expects a direct target.
 
 9. Check the behavior when a check fails. Add a file with a known
-   violation. Run `make ci`. Check for a non-zero exit. Remove the
-   file. Check for an exit status of zero.
+    violation. Run `make ci`. Check for a non-zero exit. Remove the
+    file. Check for an exit status of zero.
 
 ### When existing files fail the check
 
@@ -324,9 +326,9 @@ can drift and produce different results.
 
 The workflow [`ci.yml`](../.github/workflows/ci.yml) runs the checks on
 GitHub Actions. It runs on each pull request and each push to `main`.
-The workflow contains eleven jobs: `mise`, `jactionlint`, `bash`,
+The workflow contains twelve jobs: `mise`, `jactionlint`, `bash`,
 `shfmt`, `commits`, `markdown`, `hadolint`, `dockerfmt`, `dclint`, `zizmor`,
-and `gitleaks`.
+`gitleaks`, and `editorconfig`.
 
 Each job uses the `jdxcode/mise` image on the `ubuntu-24.04` runner. The
 image provides `mise`, `git`, `curl`, and CA certificates. It provides

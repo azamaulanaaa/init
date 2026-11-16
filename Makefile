@@ -1,7 +1,7 @@
 SHELL := bash
 .DEFAULT_GOAL := help
 
-.PHONY: help ci smolvm smolvm-pack smolvm-clean smolvm-exec smolvm-preflight smolvm-verify check-jactionlint check-bash check-commits check-dclint check-dockerfmt check-gitleaks check-hadolint check-markdown check-mise check-shfmt check-zizmor format format-shfmt format-dockerfmt format-dclint hooks release
+.PHONY: help ci smolvm smolvm-pack smolvm-clean smolvm-exec smolvm-preflight smolvm-verify check-jactionlint check-bash check-commits check-dclint check-dockerfmt check-editorconfig check-gitleaks check-hadolint check-markdown check-mise check-shfmt check-zizmor format format-shfmt format-dockerfmt format-dclint hooks release
 
 help: ## Show this help.
 	@echo "Targets:"
@@ -42,6 +42,9 @@ check-dclint: ## Check the Docker Compose files with dclint.
 
 check-dockerfmt: ## Check the Dockerfile and Containerfile files with dockerfmt.
 	scripts/check-dockerfmt.sh
+
+check-editorconfig: ## Check the files against EditorConfig rules.
+	scripts/check-editorconfig.sh
 
 check-gitleaks: ## Scan the repository for secrets with gitleaks.
 	scripts/check-gitleaks.sh

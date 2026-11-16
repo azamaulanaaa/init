@@ -3,6 +3,7 @@
 
 [tools]
 cocogitto = "7"
+editorconfig-checker = "4"
 "github:reteps/dockerfmt" = "0"
 gitleaks = "8"
 hadolint = "2"
