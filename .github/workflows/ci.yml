@@ -66,6 +66,9 @@ jobs:
           - name: cargo
             install_args: rust
             script: scripts/check-cargo.sh
+          - name: clippy
+            install_args: rust
+            script: scripts/check-clippy.sh
     steps:
       - name: Check out the repository
         if: matrix.name != 'commits'
