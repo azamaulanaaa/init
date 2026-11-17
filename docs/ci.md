@@ -31,6 +31,23 @@ and mounts the repository read-only at
 `/workspace`. `make smolvm-verify` checks that the isolation holds.
 The [smolvm document](smolvm.md) describes this path.
 
+Set `SMOLVM_SERVE_ADDR` to send the checks to a remote `smolvm serve`
+endpoint. `scripts/ci.sh` then calls `scripts/smolvm.sh`, which uses HTTP.
+The checks run in a machine on that server. The working tree is uploaded
+for each run with a portable copy of the git metadata. The client
+resolves a worktree pointer on the host before upload. The checks need
+the git history. The upload leaves out `.cache`, so no data comes from
+the local pack cache. No host fallback exists in that mode. The
+[smolvm document](smolvm.md) describes the remote flow and its security
+boundary. A live run verified the API calls and remote exec. Remote mode
+starts from `SMOLVM_SERVE_IMAGE`, which defaults to `debian:stable-slim`.
+The `smol/init.sh` script installs the tools on every run. Remote mode
+uses no pack cache. `make smolvm-pack` refuses to run while
+`SMOLVM_SERVE_ADDR` is set. Unset the variable to build a local pack.
+With a remote address, `make smolvm-clean` also deletes
+`smolvm-remote-*` machines on the server. The full check run is not
+verified over HTTP yet.
+
 `make hooks` sets the hook path and makes the hooks executable.
 `scripts/check-mise.sh` uses `mise` only to check `mise.toml`. It skips
 that check when `mise` is absent.
@@ -45,14 +62,18 @@ These commands and files form the pipeline:
 - `make ci` runs `scripts/ci.sh`.
 - `scripts/smolvm.sh` runs the checks inside a smolvm microVM against
   the live working tree. `make smolvm` calls it. The microVM is
-  offline and the repository mount is read-only.
+  offline and the repository mount is read-only. With a remote address
+  it uses the `smolvm serve` REST API and a machine on that server.
 - `smol/verify.sh` verifies the isolation from inside the guest and
   from the host. `make smolvm-verify` calls it.
 - `smol/pack-build.sh` builds the cached pack that the microVM runs
-  from. `make smolvm-pack` calls it. `make smolvm-clean` removes
-  the cached packs and deletes dangling `smolvm-build-*` and
-  `smolvm-run-*` machines. `make smolvm-exec` runs one command
-  inside the microVM.
+  from. `smol/init.sh` holds the provisioning steps for that build and
+  for the remote run. `make smolvm-pack` calls the build script and
+  refuses to run with `SMOLVM_SERVE_ADDR` set. `make smolvm-clean`
+  removes the cached packs and deletes dangling `smolvm-build-*` and
+  `smolvm-run-*` machines. With a remote address it also deletes
+  `smolvm-remote-*` machines on the server. `make smolvm-exec` runs one
+  command inside the microVM.
 - `scripts/format.sh` runs every `scripts/format-*.sh` in name order. It
   stops when a formatter fails.
 - `make format` runs `scripts/format.sh`.
@@ -85,8 +106,10 @@ optional. Run `make help` to list the available targets.
 `make ci` runs the checks inside a smolvm microVM when `smolvm` is on
 `PATH` and the host accelerator is available (`/dev/kvm` on Linux,
 `kern.hv_support=1` on macOS with Apple Silicon). Without them it
-prints a warning to stderr and runs the checks on the host. The
-[smolvm document](smolvm.md) lists the requirements.
+prints a warning to stderr and runs the checks on the host. Set
+`SMOLVM_SERVE_ADDR` to use a remote server instead. The remote path
+needs `curl` and `tar` on `PATH`. The [smolvm document](smolvm.md)
+lists the requirements.
 
 ### Run all checks
 

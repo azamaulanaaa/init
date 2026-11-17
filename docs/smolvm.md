@@ -7,6 +7,10 @@ repository is mounted at `/workspace` in the guest. The mount is
 read-only. The guest kernel enforces the read-only mount. The
 repository is not copied and it is not cloned.
 
+Set `SMOLVM_SERVE_ADDR` to send the checks to a `smolvm serve` endpoint on
+another host. The guest command is the same. See
+[Remote mode](#remote-mode).
+
 This sandbox is modeled on the
 [Throwaway machine](https://smolmachines.com/docs/guides/skills/throwaway-machine)
 guide (smolvm v1.34.0, 2026-11-09). Modeled on throwaway-machine.
@@ -38,7 +42,8 @@ the workload here is trusted code.
   verify step checks the claims.
 - `SMOLVM_ENABLED=0` marks a process that is already inside the
   microVM. It stops recursion. It also forces the host path on the
-  host. See [SMOLVM_ENABLED](#smolvm_enabled).
+  host. `SMOLVM_GUEST=1` also marks a process inside the guest. See
+  [SMOLVM_ENABLED](#smolvm_enabled).
 
 ## Verification status
 
@@ -55,8 +60,33 @@ Verified on 2026-11-16 on Linux x86_64 with KVM and smolvm 1.35.1:
 - The host is capable of running the microVM. The guest `apt-get`
   step is noninteractive.
 
+Verified on 2026-11-17 with `smolvm serve` v1.33.0 at
+`http://127.0.0.1:5000`:
+
+- `GET /health` and `GET /api/v1/machines` returned 200.
+- `POST /api/v1/machines` with this repository's create body returned 200.
+- The create body rejects a `smolfile` field with HTTP 422.
+- `DELETE /api/v1/machines/:name` returned 200.
+- With `SMOLVM_SERVE_IMAGE=bash:latest`, `make smolvm-exec
+  ARGS='echo hello-from-remote'` printed the guest output.
+- With the same image, `make smolvm-exec ARGS='exit 7'` returned exit
+  code 7. The machine list was empty after each run.
+- `hello-world` and `bash:latest` pulled and started on this server.
+- A create with `debian:stable-slim` returned 200. The machine was not
+  started.
+
 Still unverified:
 
+- The full `make smolvm` check run over HTTP. `bash:latest` does not
+  contain this repository's check tools. The init script needs egress
+  for `apt-get` and mise.run. That install did not run on the test
+  server. The init exec and its exit-code check are covered only by
+  the fake-curl test.
+- Remote cleanup on the live server. The fake-curl test covers the
+  `smolvm-remote-*` name filter and the delete calls.
+- The fake-curl test covers the request order, the image field, the
+  `network: true` field, the init exec, the exit-code handling, the
+  cleanup, the token header, and the output decoding.
 - `./smol/verify.sh` (`make smolvm-verify`). The inside and
   outside isolation assertions were not confirmed green on a KVM
   host. Nothing reports `result=isolation_held` yet. The
@@ -78,6 +108,8 @@ Still unverified:
   `curl -sSL https://smolmachines.com/install.sh | bash`. See the
   [smolvm local documentation](https://smolmachines.com/docs/local).
 - `git`, `make`, `sha256sum`, and `bash` on the host.
+- For remote mode, a reachable `smolvm serve` endpoint, `curl`, `tar`, and
+  a base image prepared on the server. See [Remote mode](#remote-mode).
 - Network access in the guest during the pack build. The build
   installs packages with `apt-get` and mise with the mise.run
   script. The checks themselves do not need the network.
@@ -92,28 +124,38 @@ before the checks run, `scripts/ci.sh` does the following:
     `SMOLVM_ENABLED=0` in the guest command, so this case means the
     checks are already inside the microVM. Any other value, or an
     unset variable, takes the auto path in step 2.
-2. Else if `smolvm` is on `PATH` and the host accelerator is
+2. Else if `SMOLVM_SERVE_ADDR` has a value, it `exec`s
+    `scripts/smolvm.sh`. The script uses the remote REST path. No
+    host fallback exists in that case.
+3. Else if `smolvm` is on `PATH` and the host accelerator is
     available, it `exec`s `scripts/smolvm.sh`. The detection is
     `/dev/kvm` on Linux and `kern.hv_support=1` on macOS with Apple
     Silicon.
-3. Else it prints a loud warning to stderr and runs the checks on
+4. Else it prints a loud warning to stderr and runs the checks on
     the host as before.
 
 `scripts/smolvm.sh` does the following:
 
-1. Detects `smolvm` and the host accelerator. If either is missing,
-    it prints the loud warning and `exec`s the host checks with
-    `SMOLVM_ENABLED=0`.
-2. Computes the pack cache key. The key is the SHA-256 of the
-    `sha256sum` lines of `mise.toml` and every `smol/*.smolfile`.
-3. Builds the pack when `.cache/smolvm/ci-<key>.smolmachine` is
+1. If `SMOLVM_ENABLED=0`, it runs the checks on the host. The
+    checks do not recurse.
+2. If `SMOLVM_SERVE_ADDR` has a value, it calls the remote REST
+    path. See [Remote mode](#remote-mode).
+3. Else it detects `smolvm` and the host accelerator. If either is
+    missing, it prints the loud warning and `exec`s the host checks
+    with `SMOLVM_ENABLED=0`.
+4. It computes the pack cache key. The key is the SHA-256 of the
+    `sha256sum` lines of `mise.toml`, every `smol/*.smolfile`,
+    `smol/pack-build.sh`, and `smol/init.sh`. The init script holds the
+    provisioning steps. A change to it must build a new pack.
+5. It builds the pack when `.cache/smolvm/ci-<key>.smolmachine` is
     missing. It calls `smol/pack-build.sh` for the build.
-4. Runs `smolvm machine run --from <pack> --timeout 10m -v
+6. It runs `smolvm machine run --from <pack> --timeout 10m -v
     "$PWD":/workspace:ro -- bash -lc 'cd /workspace &&
-    SMOLVM_ENABLED=0 bash scripts/ci.sh'`. The VM is discarded on
-    exit. No persistent machine is created. The `--timeout` value
-    comes from `SMOLVM_TIMEOUT` and defaults to `10m`.
-5. The exit code of the checks propagates. The exit code of
+    SMOLVM_ENABLED=0 SMOLVM_GUEST=1 bash scripts/ci.sh'`. The VM is
+    discarded on exit. No persistent machine is created. The
+    `--timeout` value comes from `SMOLVM_TIMEOUT` and defaults to
+    `10m`.
+7. The exit code of the checks propagates. The exit code of
     `machine run` in foreground mode is used as the exit code of
     `scripts/smolvm.sh`.
 
@@ -135,6 +177,114 @@ The warning appears on stderr. It is easy to
 miss in a long log. Read it when a run feels faster than expected.
 The warning does not appear when `SMOLVM_ENABLED=0` is set, because
 that case is the intended host path.
+
+## Remote mode
+
+Set `SMOLVM_SERVE_ADDR` to run the checks on a remote host. The scripts
+call a `smolvm serve` HTTP endpoint with `curl`. The local CLI is not used.
+No new runtime is added. The repository is not baked into a machine image.
+
+### Environment variables
+
+- `SMOLVM_SERVE_ADDR` sets the server address. Use a full URL such as
+  `http://127.0.0.1:8080` or `https://host:8443`. Use a bare `host:port`
+  value to get an `http://` prefix. Use a socket path such as
+  `/run/smolvm.sock` or a `unix://` value for a Unix socket.
+- `SMOLVM_SERVE_TOKEN` is optional. When set, every API call carries an
+  `Authorization: Bearer` header. The scripts never print the token value.
+- `SMOLVM_SERVE_IMAGE` names the base image for the machine. The default
+  value is `debian:stable-slim`. This is the image in
+  `smol/base.smolfile`. Set another image when you publish one with the
+  tools already installed.
+- `SMOLVM_SERVE_TIMEOUT` sets the curl timeout in seconds. The default
+  value is `120`. The local path still uses `SMOLVM_TIMEOUT`.
+
+When `SMOLVM_SERVE_ADDR` is set, the scripts need a reachable server. They
+require a successful remote run. They never run the checks or the user
+command on the host. If a call fails, they print an error and exit non-zero.
+
+The remote path prints two warnings on stderr. The first warning says
+that the local pack cache is not used. The second warning says that the
+init script installs the tools on every run. Remote mode has no pack and
+no cache. `make smolvm-pack` refuses to run while `SMOLVM_SERVE_ADDR` has
+a value. Unset the variable before you build a local pack.
+
+### API flow
+
+`scripts/smolvm-serve.sh` holds the shared REST calls. Both entry points
+source it. One run follows these steps:
+
+1. Check that `curl` and `tar` are on PATH.
+2. Resolve the server address into a base URL and curl options.
+3. Copy the live working tree to a staging directory. Exclude `.git`
+    and `.cache`. Build a portable `.git` in the staging directory. The
+    client resolves a worktree pointer to the real git dirs first. It
+    copies the common git data and overlays the per-worktree files. It
+    removes the pointer files and the worktree list. It checks the
+    staged git data before any API call. It archives the staging
+    directory. No data comes from the local pack cache.
+4. Call `GET /health` to check that the server answers.
+5. Call `POST /api/v1/machines` with `image` and `network: true` to
+    create a machine.
+6. Call `POST /api/v1/machines/<name>/start` to start it.
+7. Call `POST /api/v1/machines/<name>/exec` to check the workload.
+8. Call `PUT /api/v1/machines/<name>/files/...` to upload the archive.
+9. Call `POST /api/v1/machines/<name>/exec` to extract the archive.
+10. Call `POST /api/v1/machines/<name>/exec` to run `bash
+    /workspace/smol/init.sh`. Init output appears on the console. A
+    non-zero `exitCode` stops the run.
+11. Call `POST /api/v1/machines/<name>/exec` to run the guest command.
+12. Call `DELETE /api/v1/machines/<name>` to delete the machine.
+
+Both modes use the same guest command. It is
+`cd /workspace && SMOLVM_ENABLED=0 SMOLVM_GUEST=1 bash scripts/ci.sh`.
+For `make smolvm-exec` the command runs with the same two variables.
+
+An exec call returns HTTP 200 when the guest command fails. The helper
+reads `exitCode` from the response body. The guest exit code becomes the
+exit code of the script. The exit trap deletes the machine on every path.
+The trap also removes the local archive.
+
+### Provision the machine
+
+`smol/init.sh` holds every provisioning step. The local pack build and
+the remote run both use this one script. The script installs the
+packages with apt-get. It installs mise from mise.run to
+`/usr/local/bin/mise`. It runs `mise install` in `/workspace`. It clears
+the mise cache and trusts `/workspace` in git. It adds the mise shims to
+the login shell PATH and links them into `/usr/local/bin`. It prints an
+`error:` line and exits non-zero when a step fails.
+
+The local pack build runs `bash /workspace/smol/init.sh` in the build
+machine. The remote run uploads the working tree and runs the same
+command in a fresh machine. The upload carries a portable copy of the
+git metadata. The checks need the git history for `git rev-parse` and
+`git ls-files`. Without it, a check can fail or report a false pass.
+
+A git worktree has a `.git` pointer file. That pointer names a directory
+that does not exist in the guest. The client resolves the worktree
+pointer on the host before upload. It copies the common git data, then
+overlays the per-worktree files. It removes the pointer files and the
+worktree list. A normal checkout needs one copy because its git dir is
+its common dir. The client checks the staged git data before it calls
+the API. The upload leaves out `.cache`, so no data comes from the
+local pack cache. Remote mode uses no pack. It installs the tools on
+every run. The create body sets `network: true` so apt-get and mise.run
+can reach their endpoints.
+
+The serve API has no pack-create endpoint. It also rejects a `smolfile`
+field in the create body with HTTP 422. A create body therefore names an
+image. `SMOLVM_SERVE_IMAGE` sets that image. The default is
+`debian:stable-slim`, the image in `smol/base.smolfile`. Set another
+image when you publish one with the tools already installed.
+
+### Security boundary
+
+`smolvm serve` has no authentication by default. Bind it to loopback or a
+protected Unix socket. For a remote host, put it behind an authenticated TLS
+proxy. The token is opt-in and the scripts do not print it. Anyone who can
+call the API can create machines and run commands. Treat the API as a host
+shell. Keep the server and its proxy on a trusted network.
 
 ## Offline by default
 
@@ -194,14 +344,12 @@ machines. It then removes `.cache/smolvm/`, which covers the possible
 partial artifacts: the stub `ci-<key>` and the sidecar
 `ci-<key>.smolmachine`. See [Clean the sandbox](#clean-the-sandbox).
 
-The pack cache key covers `mise.toml`, `smol/base.smolfile`, and every
-smolfile in `smol/`. Change one of these files and the next
+The pack cache key covers `mise.toml`, `smol/pack-build.sh`,
+`smol/init.sh`, and every `smol/*.smolfile`. The init script holds the
+provisioning steps. Change one of these files and the next
 `make smolvm-pack` builds a new pack. The old pack stays in
-`.cache/smolvm/` until `make smolvm-clean` removes it. The fix to
-the pack create invocation did not change the hash inputs, so this
-fix produces the same hash `de328631a4909af5…`. The next
-`make smolvm-pack` builds the pack for the same key without extra
-switches.
+`.cache/smolvm/` until `make smolvm-clean` removes it. Remote mode does
+not use this pack.
 
 The pack does not contain the repository. `pack create --from-vm`
 captures the machine disk, and the disk has an empty `/workspace`
@@ -245,7 +393,7 @@ smolvm machine run --from .cache/smolvm/ci-<key>.smolmachine \
 
 Expect the output to show an empty or near-empty directory.
 
-The pack cache key includes the hash of every `smol/*.smolfile`.
+The pack cache key includes `smol/init.sh` and every `smol/*.smolfile`.
 The bump of `storage` and `overlay` changes that hash. The next
 `make smolvm-pack` builds one fresh pack automatically. You do not
 need to remove the old pack first.
@@ -385,6 +533,14 @@ a concern.
 2. It removes the `.cache/smolvm/` directory. This removes the
     executable stub and the sidecar `.smolmachine` files.
 
+When `SMOLVM_SERVE_ADDR` has a value, the target also cleans the server.
+It calls `GET /api/v1/machines` and deletes each machine whose name
+begins with `smolvm-remote-`. It prints one `deleted=<name>` line per
+machine. It does not delete other names. A failed delete prints
+`delete_failed=<name>` on stderr and does not stop the run. The client
+does not need `jq`. The script parses the JSON with grep and sed. The
+token stays out of the output.
+
 When `smolvm` is not on `PATH`, the script prints `smolvm=not_found`
 and a note that the machine cleanup was skipped. The cache removal
 still runs. The exit code is 0. Listing machines reads state. It does
@@ -408,8 +564,12 @@ sandbox shape is the same as the checks: the cached pack (built first
 when it is missing, exactly as `scripts/smolvm.sh` builds it), the
 repository mounted read-only at `/workspace`, no network, and a
 `--timeout` backstop. The timeout defaults to `10m`. Override it with
-`SMOLVM_TIMEOUT`. `SMOLVM_ENABLED=0` is set for the command.
-A `bash scripts/ci.sh` inside it takes the native path.
+`SMOLVM_TIMEOUT`. `SMOLVM_ENABLED=0` and `SMOLVM_GUEST=1` are set for the
+command. A `bash scripts/ci.sh` inside it takes the native path.
+
+With `SMOLVM_SERVE_ADDR` set, the command runs on a remote server. The
+remote path prints `exec=<command>` first. It then prints the guest output.
+The exit trap deletes the machine. See [Remote mode](#remote-mode).
 
 Give the command as one string in `ARGS`:
 
@@ -430,9 +590,10 @@ command's exit code is the exit code of the script.
 
 There is no host fallback. If `smolvm` is missing or the host
 accelerator is unavailable, the script prints the loud warning to
-stderr, does not run the command, and exits 1. The command is not run
-on the host under any circumstances. This is on purpose. A command
-that must not touch the host never runs by accident.
+stderr, does not run the command, and exits 1. If `SMOLVM_SERVE_ADDR` is
+set and the server fails, the script prints an error and exits non-zero.
+The command is not run on the host under any circumstances. This is on
+purpose. A command that must not touch the host never runs by accident.
 
 More examples:
 
@@ -446,16 +607,21 @@ The last example fails. The mount is read-only.
 
 ## Targets
 
-- `make ci` runs the checks. Inside smolvm when possible, on the
-  host with a loud warning when not.
-- `make smolvm` runs the checks inside smolvm. Without a usable
-  smolvm setup it prints the loud warning and falls back to the
-  host checks.
+- `make ci` runs the checks. It uses a remote machine when
+  `SMOLVM_SERVE_ADDR` has a value. It uses a local machine when smolvm and
+  the accelerator are available. Otherwise it runs on the host with a
+  loud warning.
+- `make smolvm` runs the checks inside smolvm. It uses the remote path
+  when `SMOLVM_SERVE_ADDR` has a value. Without a usable local setup and
+  without a remote address it prints the loud warning and falls back to
+  the host checks.
 - `make smolvm-pack` builds the cached pack. It exits 0 without
-  building when smolvm or the accelerator is missing.
+  building when smolvm or the accelerator is missing. It exits non-zero
+  when `SMOLVM_SERVE_ADDR` has a value. Unset the variable first.
 - `make smolvm-clean` removes the dangling `smolvm-build-*` and
-  `smolvm-run-*` machines. Then it removes `.cache/smolvm/`. See
-  [Clean the sandbox](#clean-the-sandbox).
+  `smolvm-run-*` machines. Then it removes `.cache/smolvm/`. With a
+  remote address it also deletes `smolvm-remote-*` machines on the
+  server. See [Clean the sandbox](#clean-the-sandbox).
 - `make smolvm-exec` runs one command inside the sandbox. See
   [Run a command in the sandbox](#run-a-command-in-the-sandbox).
 - `make smolvm-preflight` probes the host and prints key=value
@@ -469,17 +635,19 @@ The last example fails. The mount is read-only.
 `SMOLVM_ENABLED=0` forces the host path. `scripts/ci.sh` skips the
 microVM detection and runs the checks natively. No warning is
 printed. `scripts/smolvm.sh` does the same and runs the checks
-natively. The checks never recurse into the microVM.
+natively. The checks never recurse into the microVM. This rule also
+holds in remote mode. `SMOLVM_ENABLED=0` stops the remote call.
 
 Run `SMOLVM_ENABLED=0 make ci` to force the host path on a host that
 can run the microVM. Any other value, or an unset variable, keeps the
-auto behavior: smolvm with a working accelerator runs the checks in
-the microVM. Without them, the loud warning prints and the checks run
-on the host.
+auto behavior: a remote address sends the checks to a server. Without
+one, smolvm with a working accelerator runs the checks in the microVM.
+Without them, the loud warning prints and the checks run on the host.
 
-The microVM sets `SMOLVM_ENABLED=0` in the guest command. Set the
-variable when you debug the guest command. Do not set it on the host
-for a normal run.
+The microVM sets `SMOLVM_ENABLED=0` and `SMOLVM_GUEST=1` in the guest
+command. `SMOLVM_GUEST=1` marks a process inside the guest. Set these
+variables when you debug the guest command. Do not set them on the
+host for a normal run.
 
 ## Why the pack is built in explicit steps
 
