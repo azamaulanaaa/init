@@ -86,7 +86,8 @@ Still unverified:
   `smolvm-remote-*` name filter and the delete calls.
 - The fake-curl test covers the request order, the image field, the
   `network: true` field, the init exec, the exit-code handling, the
-  cleanup, the token header, and the output decoding.
+  cleanup, the token header, and the decoding of `stdout` and `stderr`.
+  It does not cover the base64 output fields `stdoutB64` and `stderrB64`.
 - `./smol/verify.sh` (`make smolvm-verify`). The inside and
   outside isolation assertions were not confirmed green on a KVM
   host. Nothing reports `result=isolation_held` yet. The
@@ -244,6 +245,93 @@ An exec call returns HTTP 200 when the guest command fails. The helper
 reads `exitCode` from the response body. The guest exit code becomes the
 exit code of the script. The exit trap deletes the machine on every path.
 The trap also removes the local archive.
+
+### Serve API reference
+
+This repository calls the smolvm serve API 0.5.2. The spec is an OpenAPI
+3.1.0 document. This section records the endpoints that the scripts call.
+It records the fields that the scripts send or read. A server may run a
+different API version.
+
+#### Endpoints that this repository calls
+
+| Method | Path | Purpose | Fields the scripts use |
+| --- | --- | --- | --- |
+| GET | `/health` | Check the server. | No body. |
+| POST | `/api/v1/machines` | Create a machine. | Req: `name`, `image`, `cpus` |
+| | | | Req: `memoryMb`, `network`, `cmd` |
+| POST | `/api/v1/machines/{name}/start` | Start a machine. | Path: `name` |
+| POST | `/api/v1/machines/{id}/exec` | Run a command. | Req: `command` |
+| | | | Resp: `exitCode`, `stdout`, `stderr` |
+| | | | Resp: `stdoutB64`, `stderrB64` (byte-exact) |
+| PUT | `/api/v1/machines/{id}/files/{path}` | Upload archive. | `id`, `path` |
+| | | | Body: `application/octet-stream` |
+| GET | `/api/v1/machines` | List machines. | Read `name` from each item. |
+| DELETE | `/api/v1/machines/{name}` | Delete a machine. | Path: `name` |
+
+In the table, `Req` names fields in the request body. `Resp` names fields
+in the response body. A `name` or `id` in braces is a path parameter.
+
+The scripts send `command` as an array of strings. The first item names
+the program. The other items are its arguments. The scripts read
+`exitCode` as an integer. A value other than 0 stops the run. The upload
+sends the worktree archive as an octet-stream body.
+
+#### Exec timeout
+
+`ExecRequest.timeoutSecs` sets a server-side timeout in integer seconds.
+A separate issue changes the scripts to set this field on every remote
+exec call. The value comes from `SMOLVM_SERVE_TIMEOUT`. That variable sets
+the curl client max-time and defaults to 120 seconds. The scripts subtract
+5 seconds. They use a floor of 1. They fall back to 115 when the variable
+is missing or invalid.
+
+The server timeout must be shorter than the client timeout. The server
+then returns a response with an `exitCode` before curl gives up. If both
+timeouts are equal, curl can end the call before the server returns the
+exit code.
+
+#### Output fields
+
+`stdout` and `stderr` are a lossy UTF-8 view. A non-UTF-8 byte becomes
+U+FFFD. The fields `stdoutB64` and `stderrB64` carry the raw bytes as
+base64. Those fields are byte-exact. A caller that needs binary-safe
+output uses the base64 fields.
+
+A separate issue changes the scripts to print the base64 fields. When the
+base64 fields are absent, the scripts print the lossy fields. They also
+print a warning on stderr.
+
+#### Unknown fields
+
+`CreateMachineRequest` and `ExecRequest` set `additionalProperties` to
+`false`. An unknown field or a mis-cased field gets HTTP 400. The server
+does not treat the field as a silent no-op. The create body has no
+`smolfile` field. It uses `image`, or `from` for a `.smolmachine` artifact.
+
+The 0.5.2 spec describes unknown fields as HTTP 400. On a live v1.33.0
+server, a create body with `smolfile` returned HTTP 422. See
+[Verification status](#verification-status). The observed result stays in
+that section.
+
+#### Other useful endpoints
+
+The 0.5.2 spec also lists these endpoints. This repository does not call
+them. The list below describes the spec only. It makes no promise about a
+server implementation.
+
+- `POST /api/v1/machines/{id}/exec/stream` streams stdout and stderr as
+  Server-Sent Events.
+- `GET /api/v1/machines/{id}/logs?source=workload` streams the workload's
+  stdout and stderr.
+- `GET /api/v1/machines/{id}/files/{path}` downloads a file as a raw byte
+  stream, or lists a directory as `entries` with name, kind, and size.
+- `GET /api/v1/machines/{name}/egress-events` lists the egress denials for
+  a machine.
+- `GET /api/v1/machines/{name}/mounts` lists the host directories mounted
+  into a running machine.
+- `POST /api/v1/machines/{name}/cache-disk/publish` publishes the cache
+  disk of a stopped machine as a new base in the server cache.
 
 ### Provision the machine
 
