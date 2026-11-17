@@ -69,6 +69,9 @@ jobs:
           - name: clippy
             install_args: rust
             script: scripts/check-clippy.sh
+          - name: rustfmt
+            install_args: rust
+            script: scripts/check-rustfmt.sh
           - name: cargo-deny-advisories
             install_args: "rust cargo-deny"
             script: scripts/check-cargo-deny-advisories.sh

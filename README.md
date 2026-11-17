@@ -98,6 +98,7 @@ make check-gitleaks
 make check-hadolint
 make check-markdown
 make check-mise
+make check-rustfmt
 make check-shfmt
 make check-zizmor
 ```
