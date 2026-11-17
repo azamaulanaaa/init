@@ -16,6 +16,12 @@ if command -v git >/dev/null 2>&1; then
   fi
 fi
 
+# shellcheck source=scripts/smolvm-resources.sh
+source "$script_dir/smolvm-resources.sh"
+if ! smolvm_resources_resolve; then
+  exit 1
+fi
+
 if [[ $# -eq 0 ]]; then
   echo "usage: scripts/smolvm-exec.sh <command string>" >&2
   echo "example: scripts/smolvm-exec.sh 'which mise && mise --version'" >&2
@@ -86,7 +92,7 @@ if ! command -v sha256sum >/dev/null 2>&1; then
   exit 1
 fi
 
-hash="$(sha256sum mise.toml smol/*.smolfile smol/pack-build.sh smol/init.sh | sha256sum | cut -d' ' -f1)"
+hash="$(smolvm_resources_hash_lines | sha256sum | cut -d' ' -f1)"
 pack=".cache/smolvm/ci-${hash}.smolmachine"
 
 if [[ ! -f "$pack" ]]; then

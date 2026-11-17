@@ -3,6 +3,7 @@
 # Source this file from scripts/smolvm.sh or scripts/smolvm-exec.sh.
 # Do not run this file as a command. The helper uses curl only.
 # The helper never prints the value of SMOLVM_SERVE_TOKEN.
+# CPU and memory come from SMOLVM_CPUS and SMOLVM_MEMORY_MB.
 
 # Globals set by serve_init and serve_run_remote.
 SERVE_CURL_CONNECT=()
@@ -12,6 +13,9 @@ SERVE_TARBALL=""
 SERVE_STAGE=""
 SERVE_GUEST_RC=0
 SERVE_EXEC_TIMEOUT_SECS=0
+
+# shellcheck source=scripts/smolvm-resources.sh
+source "$(dirname "${BASH_SOURCE[0]}")/smolvm-resources.sh"
 
 # Escape a string for use as a JSON string value.
 # Handle the common control characters and the JSON quote characters.
@@ -284,6 +288,9 @@ serve_run_remote() {
   local repo_root
   local image="${SMOLVM_SERVE_IMAGE:-debian:stable-slim}"
 
+  if ! smolvm_resources_resolve; then
+    return 1
+  fi
   if ! serve_init; then
     return 1
   fi
@@ -357,8 +364,9 @@ serve_run_remote() {
 
   local create_body
   create_body="$(
-    printf '{"name":"%s","image":"%s","cpus":1,"memoryMb":512,"network":true,"cmd":["sh","-c","while true; do sleep 3600; done"]}' \
-      "$(json_escape "$worker")" "$(json_escape "$image")"
+    printf '{"name":"%s","image":"%s","cpus":%s,"memoryMb":%s,"network":true,"cmd":["sh","-c","while true; do sleep 3600; done"]}' \
+      "$(json_escape "$worker")" "$(json_escape "$image")" \
+      "$SMOLVM_CPUS_VALUE" "$SMOLVM_MEMORY_MB_VALUE"
   )"
   if ! serve_request POST /api/v1/machines \
     -H 'content-type: application/json' \

@@ -4,6 +4,7 @@
 # mise.toml. smol/init.sh provisions the guest. The repository is
 # mounted at run time. It is not baked in. The build refuses to run
 # when SMOLVM_SERVE_ADDR is set.
+# CPU and memory come from SMOLVM_CPUS and SMOLVM_MEMORY_MB.
 # Exit 0 without a pack when smolvm or the host accelerator is not available.
 set -euo pipefail
 
@@ -18,6 +19,12 @@ if ! command -v git >/dev/null 2>&1; then
 fi
 
 cd "$(git rev-parse --show-toplevel)"
+
+# shellcheck source=scripts/smolvm-resources.sh
+source scripts/smolvm-resources.sh
+if ! smolvm_resources_resolve; then
+  exit 1
+fi
 
 print_warning() {
   cat >&2 <<'EOF'
@@ -64,7 +71,7 @@ fi
 
 hash="${1:-}"
 if [[ -z "$hash" ]]; then
-  hash="$(sha256sum mise.toml smol/*.smolfile smol/pack-build.sh smol/init.sh | sha256sum | cut -d' ' -f1)"
+  hash="$(smolvm_resources_hash_lines | sha256sum | cut -d' ' -f1)"
 fi
 
 pack_dir=".cache/smolvm"
@@ -78,6 +85,7 @@ fi
 mkdir -p "$pack_dir"
 
 build_name="smolvm-build-${hash:0:16}"
+smolfile_dir=""
 
 # Delete with --force --cascade, as the smolvm makefile does. Without
 # these flags, the delete can fail silently and leave the machine
@@ -87,6 +95,10 @@ cleanup_build() {
   smolvm machine stop --name "$build_name" >/dev/null 2>&1 || true
   smolvm machine delete --name "$build_name" --force --cascade >/dev/null 2>&1 || true
   rm -f "${pack_dir}/ci-${hash}" "${pack_dir}/ci-${hash}.smolmachine"
+  if [[ -n "$smolfile_dir" ]]; then
+    rm -rf -- "$smolfile_dir"
+    smolfile_dir=""
+  fi
 }
 trap cleanup_build EXIT
 
@@ -101,10 +113,18 @@ guest_df() {
 # Remove a leftover build machine from an earlier failed run.
 smolvm machine delete --name "$build_name" --force --cascade >/dev/null 2>&1 || true
 
+# Render the smolfile with the selected CPU and memory values.
+# The base file holds placeholders that smolvm cannot read from the
+# environment. The rendered file lives in a temporary directory.
+smolfile_dir="$(mktemp -d "${TMPDIR:-/tmp}/smolvm-smolfile.XXXXXX")"
+smolvm_resources_render_smolfile "${smolfile_dir}/base.smolfile"
+
 # Create the build machine with the repository mounted at /workspace.
 # The mount is read-only. The build only reads mise.toml.
-smolvm machine create --name "$build_name" --smolfile smol/base.smolfile \
+smolvm machine create --name "$build_name" --smolfile "${smolfile_dir}/base.smolfile" \
   -v "$PWD":/workspace:ro
+rm -rf -- "$smolfile_dir"
+smolfile_dir=""
 smolvm machine start --name "$build_name"
 
 # Provision the guest with the shared init script.
@@ -125,7 +145,8 @@ smolvm machine stop --name "$build_name"
 # <output>.smolmachine is created automatically. --single-file does
 # not bypass the output validation, so it is not passed. An -o value
 # that ends in .smolmachine is rejected.
-smolvm pack create --from-vm "$build_name" --cpus 1 --mem 512 \
+smolvm pack create --from-vm "$build_name" \
+  --cpus "$SMOLVM_CPUS_VALUE" --mem "$SMOLVM_MEMORY_MB_VALUE" \
   -o "${pack_dir}/ci-${hash}"
 
 # Disarm the trap first. The pack is never discarded by the trap,
