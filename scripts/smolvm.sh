@@ -8,6 +8,8 @@ if ! command -v git >/dev/null 2>&1; then
   exit 1
 fi
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 cd "$(git rev-parse --show-toplevel)"
 
 print_warning() {
@@ -46,6 +48,14 @@ if [[ "${SMOLVM_ENABLED:-}" == "0" ]]; then
   exec scripts/ci.sh
 fi
 
+if [[ -n "${SMOLVM_SERVE_ADDR:-}" ]]; then
+  # Run the checks in a machine on the remote server. Never use the host.
+  # shellcheck source=scripts/smolvm-serve.sh
+  source "$script_dir/smolvm-serve.sh"
+  serve_run_remote 'cd /workspace && SMOLVM_ENABLED=0 SMOLVM_GUEST=1 bash scripts/ci.sh' || exit $?
+  exit "$SERVE_GUEST_RC"
+fi
+
 if ! host_accel_ok; then
   print_warning
   export SMOLVM_ENABLED=0
@@ -57,7 +67,7 @@ if ! command -v sha256sum >/dev/null 2>&1; then
   exit 1
 fi
 
-hash="$(sha256sum mise.toml smol/*.smolfile | sha256sum | cut -d' ' -f1)"
+hash="$(sha256sum mise.toml smol/*.smolfile smol/pack-build.sh smol/init.sh | sha256sum | cut -d' ' -f1)"
 pack=".cache/smolvm/ci-${hash}.smolmachine"
 
 if [[ ! -f "$pack" ]]; then
@@ -76,6 +86,6 @@ fi
 rc=0
 smolvm machine run --from "$pack" --timeout "${SMOLVM_TIMEOUT:-10m}" \
   -v "$PWD":/workspace:ro -- bash -lc \
-  'cd /workspace && SMOLVM_ENABLED=0 bash scripts/ci.sh' || rc=$?
+  'cd /workspace && SMOLVM_ENABLED=0 SMOLVM_GUEST=1 bash scripts/ci.sh' || rc=$?
 
 exit "$rc"

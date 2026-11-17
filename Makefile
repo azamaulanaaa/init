@@ -10,7 +10,7 @@ help: ## Show this help.
 ci: ## Run every check.
 	scripts/ci.sh
 
-smolvm: ## Run the checks inside a smolvm microVM, or on the host as a fallback.
+smolvm: ## Run the checks inside a smolvm microVM, local or remote.
 	scripts/smolvm.sh
 
 smolvm-pack: ## Build the cached smolvm pack for the microVM.
@@ -19,7 +19,7 @@ smolvm-pack: ## Build the cached smolvm pack for the microVM.
 smolvm-clean: ## Remove the cached smolvm packs and delete dangling smolvm machines.
 	scripts/smolvm-clean.sh
 
-smolvm-exec: ## Run an arbitrary command inside the microVM (ARGS='...').
+smolvm-exec: ## Run a command inside the microVM, local or remote (ARGS='...').
 	@scripts/smolvm-exec.sh "$(ARGS)"
 
 smolvm-preflight: ## Probe whether this host is ready for the smolvm microVM.

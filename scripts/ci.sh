@@ -31,6 +31,9 @@ host_accel_ok() {
 }
 
 if [[ "${SMOLVM_ENABLED:-}" != "0" ]]; then
+  if [[ -n "${SMOLVM_SERVE_ADDR:-}" ]]; then
+    exec scripts/smolvm.sh
+  fi
   if host_accel_ok; then
     exec scripts/smolvm.sh
   fi

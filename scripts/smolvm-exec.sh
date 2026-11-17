@@ -7,6 +7,8 @@
 # and it is not run on the host under any circumstances.
 set -euo pipefail
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 if command -v git >/dev/null 2>&1; then
   root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
   if [[ -n "$root" ]]; then
@@ -32,6 +34,16 @@ if [[ -z "${cmd//[[:space:]]/}" ]]; then
   echo "example: scripts/smolvm-exec.sh 'which mise && mise --version'" >&2
   echo "example: make smolvm-exec ARGS='df -h /'" >&2
   exit 2
+fi
+
+if [[ -n "${SMOLVM_SERVE_ADDR:-}" ]]; then
+  # Run the command in a machine on the remote server. Never use the host.
+  # shellcheck source=scripts/smolvm-serve.sh
+  source "$script_dir/smolvm-serve.sh"
+  echo "exec=$cmd"
+  serve_run_remote \
+    "cd /workspace && export SMOLVM_ENABLED=0 SMOLVM_GUEST=1 && $cmd" || exit $?
+  exit "$SERVE_GUEST_RC"
 fi
 
 print_warning() {
@@ -74,7 +86,7 @@ if ! command -v sha256sum >/dev/null 2>&1; then
   exit 1
 fi
 
-hash="$(sha256sum mise.toml smol/*.smolfile | sha256sum | cut -d' ' -f1)"
+hash="$(sha256sum mise.toml smol/*.smolfile smol/pack-build.sh smol/init.sh | sha256sum | cut -d' ' -f1)"
 pack=".cache/smolvm/ci-${hash}.smolmachine"
 
 if [[ ! -f "$pack" ]]; then
@@ -90,6 +102,6 @@ echo "exec=$cmd"
 rc=0
 smolvm machine run --from "$pack" --timeout "${SMOLVM_TIMEOUT:-10m}" \
   -v "$PWD":/workspace:ro -- bash -lc \
-  "cd /workspace && export SMOLVM_ENABLED=0 && $cmd" || rc=$?
+  "cd /workspace && export SMOLVM_ENABLED=0 SMOLVM_GUEST=1 && $cmd" || rc=$?
 
 exit "$rc"
