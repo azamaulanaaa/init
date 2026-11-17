@@ -11,6 +11,7 @@ SERVE_MACHINE_NAME=""
 SERVE_TARBALL=""
 SERVE_STAGE=""
 SERVE_GUEST_RC=0
+SERVE_EXEC_TIMEOUT_SECS=0
 
 # Escape a string for use as a JSON string value.
 # Handle the common control characters and the JSON quote characters.
@@ -66,6 +67,20 @@ serve_init() {
     return 1
     ;;
   esac
+
+  # Compute the server exec timeout from the curl client timeout.
+  # Use the default client timeout when the value is not a positive number.
+  # Keep the server timeout smaller than the client timeout.
+  local client_timeout="${SMOLVM_SERVE_TIMEOUT:-120}"
+  if [[ ! "$client_timeout" =~ ^[0-9]+([.][0-9]+)?$ ]] ||
+    [[ "$client_timeout" != *[1-9]* ]]; then
+    client_timeout=120
+  fi
+  local whole_secs="${client_timeout%%.*}"
+  SERVE_EXEC_TIMEOUT_SECS=$((whole_secs - 5))
+  if ((SERVE_EXEC_TIMEOUT_SECS < 1)); then
+    SERVE_EXEC_TIMEOUT_SECS=1
+  fi
   return 0
 }
 
@@ -285,7 +300,7 @@ serve_run_remote() {
   local response
   if ! response="$(serve_request POST "/api/v1/machines/${worker}/exec" \
     -H 'content-type: application/json' \
-    -d '{"command":["bash","-lc","echo SMOLVM_READY"]}' 2>&1)"; then
+    -d '{"command":["bash","-lc","echo SMOLVM_READY"],"timeoutSecs":'"$SERVE_EXEC_TIMEOUT_SECS"'}' 2>&1)"; then
     echo "error: the remote smolvm API call failed: readiness check." >&2
     return 1
   fi
@@ -303,7 +318,7 @@ serve_run_remote() {
 
   if ! response="$(serve_request POST "/api/v1/machines/${worker}/exec" \
     -H 'content-type: application/json' \
-    -d '{"command":["bash","-lc","mkdir -p /workspace && tar -xzf /root/smolvm-worktree.tar.gz -C /workspace"]}' 2>&1)"; then
+    -d '{"command":["bash","-lc","mkdir -p /workspace && tar -xzf /root/smolvm-worktree.tar.gz -C /workspace"],"timeoutSecs":'"$SERVE_EXEC_TIMEOUT_SECS"'}' 2>&1)"; then
     echo "error: the remote smolvm API call failed: extract working tree." >&2
     return 1
   fi
@@ -316,7 +331,7 @@ serve_run_remote() {
 
   if ! response="$(serve_request POST "/api/v1/machines/${worker}/exec" \
     -H 'content-type: application/json' \
-    -d '{"command":["bash","-lc","bash /workspace/smol/init.sh"]}' 2>&1)"; then
+    -d '{"command":["bash","-lc","bash /workspace/smol/init.sh"],"timeoutSecs":'"$SERVE_EXEC_TIMEOUT_SECS"'}' 2>&1)"; then
     echo "error: the remote smolvm API call failed: provision machine." >&2
     return 1
   fi
@@ -333,7 +348,7 @@ serve_run_remote() {
   escaped="$(json_escape "$guest_command")"
   if ! response="$(serve_request POST "/api/v1/machines/${worker}/exec" \
     -H 'content-type: application/json' \
-    -d "{\"command\":[\"bash\",\"-lc\",\"${escaped}\"]}" 2>&1)"; then
+    -d "{\"command\":[\"bash\",\"-lc\",\"${escaped}\"],\"timeoutSecs\":${SERVE_EXEC_TIMEOUT_SECS}}" 2>&1)"; then
     echo "error: the remote smolvm API call failed: run command." >&2
     return 1
   fi
