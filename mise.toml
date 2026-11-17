@@ -5,9 +5,12 @@
 cocogitto = "7"
 editorconfig-checker = "4"
 "github:reteps/dockerfmt" = "0"
+# fx releases are v0.0.x. The 0 prefix follows the latest 0.x release.
+"github:vercel-labs/fx" = "0"
 gitleaks = "8"
 hadolint = "2"
 jactionlint = "2"
+jq = "1"
 make = "4"
 # The npm tools need the Node.js runtime.
 node = "24"

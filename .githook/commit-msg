@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Check the commit message against the Conventional Commits specification.
+# Then run the agent-fx check on the message and the staged change.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
-exec cog verify --file "$1"
+cog verify --file "$1"
+AGENT_FX_MESSAGE_FILE="$1" scripts/agent-fx.sh

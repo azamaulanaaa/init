@@ -103,18 +103,30 @@ These commands and files form the pipeline:
   the `smolvm-ci-<owner>-<key>.qcow2` cache bases. The target prints
   the plan and asks one time. `make smolvm-exec` runs one command
   inside the microVM.
+- `scripts/check-agent-fx.sh` checks commit-message relevancy with an
+  fx agent. It runs only inside the microVM. On the host it prints a
+  warning and exits 0. See the [agent-fx document](agent-fx.md).
+- `scripts/agent-fx.sh` runs that check inside the microVM with
+  network and the repo-root `.fx/settings.json`. `make agent-fx` calls it. This
+  path is opt-in and does not change `make ci`.
+- `scripts/test-agent-fx.sh` tests the guard and the verdict mapping
+  with a fake `fx`. `make test-agent-fx` calls it.
 - `scripts/format.sh` runs every `scripts/format-*.sh` in name order. It
   stops when a formatter fails.
 - `make format` runs `scripts/format.sh`.
 - `.githook/commit-msg` runs `cog verify` on the commit message. A bad
   message stops the commit.
 - `.githook/pre-commit` runs `scripts/ci.sh` before each commit.
-- `.githook/pre-push` runs `scripts/ci.sh` before each push.
+- `.githook/pre-push` runs `scripts/ci.sh` before each push. It then
+  calls the agent-fx driver in history mode. See the
+  [agent-fx document](agent-fx.md).
 - `make hooks` sets `core.hooksPath` to `.githook`. It makes the hooks
   executable.
 
 The `pre-commit` and `pre-push` hooks call `scripts/ci.sh` directly.
-The `commit-msg` hook calls `cog verify`. No hook calls `mise`. If a
+The `commit-msg` hook calls `cog verify`. The `commit-msg` and
+`pre-push` hooks also call the AI driver. That driver is separate from
+`scripts/ci.sh`. No hook calls `mise`. If a
 required tool is missing from `PATH`, the hook fails.
 
 `scripts/ci.sh` prints `run: <script>` before each check. It prints
@@ -366,6 +378,22 @@ A `Makefile` target is optional. Add the target name to the `.PHONY`
 line at the top of the [`Makefile`](../Makefile). Do this when you add a
 target.
 
+## The agent-fx check
+
+`scripts/check-agent-fx.sh` is a check script. `scripts/ci.sh` finds it
+with the other check scripts. The script has a hard precondition. It
+runs only when `SMOLVM_GUEST=1`. The guest commands set that marker. The
+host does not set it. When the marker is absent, the script prints a
+warning to stderr and exits 0. It does not call `fx`. It does not fail
+the host build. `SMOLVM_ENABLED=0` is not a valid marker because the
+host also sets it.
+
+`make agent-fx` is the opt-in path that runs the check. It grants
+network access to one host and reads the repo-root `.fx/settings.json`.
+It does not change `make ci`. The offline checks stay as they are. The
+[agent-fx document](agent-fx.md) states the verdict mapping, the
+environment variables, and the trade-off.
+
 ## Use `mise`
 
 `mise` is the local installer for development tools. It does not start
@@ -435,6 +463,11 @@ A check script follows these rules:
 - Write short output. Print a result line. Print the tool output when a
   check fails.
 - Exit non-zero when a check fails.
+
+`scripts/check-agent-fx.sh` is an explicit exception when `make
+agent-fx` runs it. That opt-in path uses the network and the repo-root
+`.fx/settings.json`. It exits 0 with a warning in every other case. The offline
+rules above still apply to the default `make ci` path.
 
 ## Compatibility and limits
 

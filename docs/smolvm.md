@@ -131,7 +131,7 @@ with Apple Silicon it needs `kern.hv_support=1`.
     SMOLVM_ENABLED=0 SMOLVM_GUEST=1 bash scripts/ci.sh'`. The VM is
     discarded on exit. No persistent machine is created. The
     `--timeout` value comes from `SMOLVM_TIMEOUT` and defaults to
-    `10m`.
+    `10m`. `SMOLVM_GUEST=1` marks the process as a guest run.
 7. The exit code of the checks propagates. The exit code of
     `machine run` in foreground mode is used as the exit code of
     `scripts/smolvm.sh`.
@@ -743,6 +743,12 @@ This is materially stronger isolation than a run with egress rules. A
 filter on egress depends on the workload's cooperation. No network is
 a property of the machine.
 
+`make agent-fx` is an explicit exception. It adds `--allow-host
+<endpoint-host>` to the guest command. That flag opens egress to one
+host and implies `--net`. The repository mount carries `.fx/settings.json` into
+the guest. The default check path stays offline. See the
+[agent-fx document](agent-fx.md).
+
 ## The pack
 
 `make smolvm-pack` builds the pack. The build does the following:
@@ -774,6 +780,10 @@ a property of the machine.
     reservations.
 10. Deletes the build machine.
 
+`fx` comes from `mise.toml` through the `github:vercel-labs/fx` entry.
+`mise install` puts it in the pack. No separate installer runs in the
+pack build.
+
 If a failure happens before the pack create succeeds, the trap
 removes the build machine. It stops the machine, deletes it with
 `--force --cascade`, and removes possible partial artifacts: the
@@ -794,11 +804,12 @@ The target deletes only the `smolvm-build-<owner>-*` and
 
 The pack cache key covers `mise.toml`, `smol/pack-build.sh`,
 `smol/init.sh`, and every `smol/*.smolfile`. The init script holds the
-provisioning steps. Change one of these files and the next
-`make smolvm-pack` builds a new pack. The key also covers
-`SMOLVM_CPUS` and `SMOLVM_MEMORY_MB` when a value differs from its
-default. A pack built for one resource setting is not reused for
-another setting. The old pack stays in `.cache/smolvm/` until
+provisioning steps. The `fx` and `jq` entries in `mise.toml` are part of
+the key. Change one of these files and the next `make smolvm-pack`
+builds a new pack. The key also covers `SMOLVM_CPUS` and
+`SMOLVM_MEMORY_MB` when a value differs from its default. A pack built
+for one resource setting is not reused for another setting. The old
+pack stays in `.cache/smolvm/` until
 `make smolvm-clean` removes it. Remote mode does not use this pack.
 
 The pack does not contain the repository. `pack create --from-vm`
@@ -1047,7 +1058,8 @@ when it is missing, exactly as `scripts/smolvm.sh` builds it), the
 repository mounted read-only at `/workspace`, no network, and a
 `--timeout` backstop. The timeout defaults to `10m`. Override it with
 `SMOLVM_TIMEOUT`. `SMOLVM_ENABLED=0` and `SMOLVM_GUEST=1` are set for the
-command. A `bash scripts/ci.sh` inside it takes the native path.
+command. A `bash scripts/ci.sh` inside it takes the native path. The guest
+marker lets the agent-fx check recognize a real guest run.
 
 With `SMOLVM_ADDR` set, the command runs on a remote server. The
 remote path prints `exec=<command>` first. It then prints the guest output.
@@ -1156,6 +1168,11 @@ make release ARGS='--dry-run'
   lines. Exits 0 when ready, 1 when blocked.
 - `make smolvm-verify` verifies the isolation from inside the guest
   and from the host. Exits 0 when the isolation held, 1 otherwise.
+- `make agent-fx` runs the agent-fx check inside the sandbox with
+  network and the repo-root `.fx/settings.json`. It is opt-in. See the
+  [agent-fx document](agent-fx.md).
+- `make test-agent-fx` tests the agent-fx guard and verdict mapping
+  with a fake `fx`. It needs no network.
 - `make help` lists all targets.
 
 ## SMOLVM_ENABLED
@@ -1186,6 +1203,15 @@ The microVM sets `SMOLVM_ENABLED=0` and `SMOLVM_GUEST=1` in the guest
 command. `SMOLVM_GUEST=1` marks a process inside the guest. Set these
 variables when you debug the guest command. Do not set them on the
 host for a normal run.
+
+## SMOLVM_GUEST
+
+`SMOLVM_GUEST=1` marks a process as a guest run. The guest commands in
+`scripts/smolvm.sh`, `scripts/smolvm-exec.sh`, and the agent-fx run command
+set it. The host does not set it. `scripts/check-agent-fx.sh` reads
+this marker and runs only when it is `1`. No flag or environment
+variable can replace a real guest run. This marker is separate from
+`SMOLVM_ENABLED`.
 
 ## Provisioning steps
 
@@ -1282,4 +1308,6 @@ The `pre-commit` and `pre-push` hooks call `scripts/ci.sh` with no
 changes. On a host that can run smolvm, the first commit builds the
 pack. Later commits reuse `.cache/smolvm/ci-<key>.smolmachine`.
 
-The GitHub Actions workflow runs the checks on the host.
+The GitHub Actions workflow runs the checks on the host. The agent-fx
+check is not in the hooks or the workflow. Run it with `make agent-fx`
+when you need it.

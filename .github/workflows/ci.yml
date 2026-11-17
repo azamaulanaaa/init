@@ -155,3 +155,26 @@ jobs:
           persist-credentials: false
       - name: Review the dependency changes
         uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
+
+  agent-fx:
+    name: agent-fx
+    if: ${{ vars.AGENT_FX_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04
+    container:
+      image: jdxcode/mise@sha256:05360b08fb68ace24d4814adaa6f36371584f6931782ead4891872049667af5a # jdxcode/mise:2026.11.8-debian
+    timeout-minutes: 10
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Run the agent-fx prompts
+        env:
+          AGENT_FX_API_KEY: ${{ secrets.AGENT_FX_API_KEY }}
+        run: |
+          if [[ -z "${AGENT_FX_API_KEY:-}" ]]; then
+            echo "skip: AGENT_FX_API_KEY is not set."
+            exit 0
+          fi
+          make agent-fx-all

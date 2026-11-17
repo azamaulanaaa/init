@@ -1,7 +1,7 @@
 SHELL := bash
 .DEFAULT_GOAL := help
 
-.PHONY: help ci smolvm smolvm-pack smolvm-clean smolvm-exec smolvm-preflight smolvm-verify check-jactionlint check-bash check-commits check-dclint check-dockerfmt check-editorconfig check-gitleaks check-hadolint check-markdown check-mise check-shfmt check-zizmor format format-shfmt format-dockerfmt format-dclint hooks release
+.PHONY: help ci smolvm smolvm-pack smolvm-clean smolvm-exec smolvm-preflight smolvm-verify agent-fx agent-fx-history agent-fx-all test-agent-fx test-agent-fx-history test-agent-fx-prompts test-commit-lifecycle check-jactionlint check-bash check-commits check-dclint check-dockerfmt check-editorconfig check-gitleaks check-hadolint check-markdown check-mise check-shfmt check-zizmor format format-shfmt format-dockerfmt format-dclint hooks release
 
 help: ## Show this help.
 	@echo "Targets:"
@@ -27,6 +27,33 @@ smolvm-preflight: ## Probe whether this host is ready for the smolvm microVM.
 
 smolvm-verify: ## Verify the isolation of the microVM from inside and outside the guest.
 	smol/verify.sh
+
+agent-fx: ## Run the agent-fx check inside the microVM (opt-in, needs .fx/settings.json).
+	scripts/agent-fx.sh
+
+agent-fx-history: ## Run the agent-fx history check inside the microVM (opt-in).
+	AGENT_FX_MODE=history scripts/agent-fx.sh
+
+# Run every prompt in history mode. Ignore a caller value so the loop covers
+# all templates. Stop when one template fails.
+agent-fx-all: ## Run the agent-fx check once for each prompt template (opt-in).
+	@set -e; for prompt in .fx/prompt/*.md; do \
+		name="$$(basename "$$prompt" .md)"; \
+		echo "run: agent-fx prompt $$name"; \
+		AGENT_FX_PROMPT="$$name" AGENT_FX_MODE=history scripts/agent-fx.sh; \
+	done
+
+test-agent-fx: ## Test the agent-fx check guard and verdict mapping.
+	scripts/test-agent-fx.sh
+
+test-agent-fx-history: ## Test the agent-fx history mode with a fake fx.
+	scripts/test-agent-fx-history.sh
+
+test-agent-fx-prompts: ## Test the agent-fx prompt templates.
+	scripts/test-agent-fx-prompts.sh
+
+test-commit-lifecycle: ## Test the smolvm machine lifecycle for the agent-fx check.
+	scripts/test-commit-lifecycle.sh
 
 check-jactionlint: ## Check the GitHub Actions workflows with jactionlint.
 	scripts/check-jactionlint.sh

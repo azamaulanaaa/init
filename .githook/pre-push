@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Run the checks before each push.
+# Run the offline checks, then the agent-fx check over the commit history.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
-exec scripts/ci.sh
+scripts/ci.sh
+AGENT_FX_MODE=history scripts/agent-fx.sh

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Build the cached smolvm pack for the checks.
 # The pack holds the debian base image, mise, and the tools from
-# mise.toml. smol/init.sh provisions the guest. The repository is
-# mounted at run time. It is not baked in. The build refuses to run
-# when SMOLVM_ADDR is set.
+# mise.toml, including fx and jq. smol/init.sh provisions the guest.
+# The repository is mounted at run time. It is not baked in. The build
+# refuses to run when SMOLVM_ADDR is set.
 # CPU and memory come from SMOLVM_CPUS and SMOLVM_MEMORY_MB.
 # Exit 0 without a pack when smolvm or the host accelerator is not available.
 set -euo pipefail

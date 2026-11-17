@@ -78,6 +78,15 @@ absent. `make help` lists every target.
 
 The checks do not change files. They report a problem and exit non-zero.
 
+`make agent-fx` runs an agent-fx check for commit-message relevancy. The
+`staged` mode checks a new message. `make agent-fx-history` checks past
+commits. Both modes run only inside a smolvm microVM. They need network
+access, a repo-root `.fx/settings.json`, and `jq` on `PATH`. The pack installs jq
+through mise. The agent answers with one JSON object. The object holds a
+`verdict` of `PASS` or `FAIL` and a short `reason`. The check is opt-in
+and does not change `make ci`. See the
+[agent-fx check](docs/agent-fx.md).
+
 Run these commands to use the sandbox:
 
 ```bash
@@ -87,7 +96,28 @@ make smolvm-preflight
 make smolvm-verify
 make smolvm-exec
 make smolvm-clean
+make agent-fx
+make agent-fx-history
 ```
+
+`make agent-fx` is the opt-in network path. Copy the tracked
+`.fx/settings.json.example` to `.fx/settings.json` under `.fx`. The local
+`.fx/settings.json` is not committed. Keep a local copy and set it aside
+with `git stash` when needed. It holds the endpoint, model, and auth fields.
+It holds no secret.
+Export `AGENT_FX_API_KEY` on the host for bearer auth. Export
+`AGENT_FX_ORG_ID` too when the config uses a header. The check reads
+`.git/COMMIT_EDITMSG` by default. Set
+`AGENT_FX_MESSAGE_FILE` on the host to override that path. The driver
+creates a uniquely named machine from the pack. It starts the machine,
+runs the check, then stops and deletes the machine. History mode selects
+commits since the latest tag. `AGENT_FX_HISTORY_LIMIT` sets the maximum
+number of commits. The `commit-msg` hook calls the driver in staged mode.
+The `pre-push` hook calls the driver in history mode after `make ci`. The
+`agent-fx` CI job runs history mode when `AGENT_FX_ENABLED` is `true`
+and `AGENT_FX_API_KEY` is set. `make test-agent-fx`,
+`make test-agent-fx-history`, and `make test-commit-lifecycle` test the
+checks without a network. See the [agent-fx check](docs/agent-fx.md).
 
 The sandbox is offline: the microVM runs a baked pack and asks the
 registry for nothing. The repository is mounted read-only at
@@ -282,7 +312,8 @@ See the [smolvm documentation](docs/smolvm.md) for the full list.
   `smolvm-clean.sh`, `smolvm-exec.sh`, and `smolvm-serve.sh` helpers.
 - `smol/` contains the smolvm base machine, the shared `init.sh`
   provisioning script, and the pack build script.
-- `docs/` contains the check, the release, and the smolvm documents.
+- `docs/` contains the check, the release, the smolvm, and the agent-fx
+  check documents.
 - `cog.toml` contains the `Cocogitto` settings for commits, changelog,
   and tags.
 - `Makefile` contains the command targets for setup, checks, and
@@ -298,6 +329,8 @@ See the [smolvm documentation](docs/smolvm.md) for the full list.
   and the release steps.
 - The [smolvm](docs/smolvm.md) describes the sandbox settings,
   the pack cache, and the known limits.
+- The [agent-fx check](docs/agent-fx.md) describes the smolvm-only
+  guard, the verdict mapping, and the network exception.
 
 ## License
 
