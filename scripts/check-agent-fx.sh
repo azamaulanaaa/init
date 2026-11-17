@@ -163,20 +163,42 @@ render_prompt() {
   printf '%s\n' "$text"
 }
 
-# The core check uses a fixed prompt. Prompt templates are added later.
-prompt_text="# Commit message review
+# Select the named prompt. The default name keeps the current instructions.
+# The driver forwards the name as a plain value, not as a secret.
+prompt_name="${AGENT_FX_PROMPT:-default}"
+if [[ ! "$prompt_name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+  warn "AGENT_FX_PROMPT $prompt_name is not a valid prompt name. Skipping the agent-fx check."
+  exit 0
+fi
 
-You run in {{MODE}} mode.
-You are checking {{LABEL}}.
-Read the commit message file {{MESSAGE_FILE}}.
-Read the change file {{CHANGE_FILE}}.
-Decide whether the commit message describes the change.
+# Prefer the prompts of the repository under test. When that repository
+# has no prompt directory, use the prompts shipped with this script.
+prompt_dir="$repo_root/.fx/prompt"
+if [[ ! -d "$prompt_dir" ]]; then
+  prompt_dir="$(cd "$script_dir/.." && pwd)/.fx/prompt"
+fi
+prompt_file="$prompt_dir/$prompt_name.md"
+if [[ ! -r "$prompt_file" ]]; then
+  warn "prompt $prompt_name is missing or unreadable. Skipping the agent-fx check."
+  exit 0
+fi
+if [[ ! -s "$prompt_file" ]]; then
+  warn "prompt $prompt_name has no text. Skipping the agent-fx check."
+  exit 0
+fi
 
-End your answer with exactly one JSON object.
-The object has exactly two fields: verdict and reason.
-Set verdict to the exact string PASS or FAIL.
-Write no text before or after the JSON object.
-Use no markdown fence.
+# Make the shipped skills and prompts visible to fx in the temporary
+# workspace. fx discovers skills from the workspace .fx directory.
+for fx_dir in skills prompt; do
+  if [[ -d "$repo_root/.fx/$fx_dir" ]]; then
+    mkdir -p "$tmp/.fx"
+    cp -R "$repo_root/.fx/$fx_dir" "$tmp/.fx/"
+  elif [[ -d "$(cd "$script_dir/.." && pwd)/.fx/$fx_dir" ]]; then
+    mkdir -p "$tmp/.fx"
+    cp -R "$(cd "$script_dir/.." && pwd)/.fx/$fx_dir" "$tmp/.fx/"
+  fi
+done
+
 # Replace the key value with *** before any fx output reaches stderr.
 redact_stream() {
   local value="${!auth_env:-}"
@@ -233,7 +255,7 @@ judge() {
 
   printf '%s\n' "$message" >"$tmp/commit-message.txt"
   printf '%s\n' "$change" >"$tmp/$diff_file"
-  render_prompt "$prompt_text" "$judge_mode" "$label" "$diff_file" "$hash" >"$tmp/rendered-prompt.md"
+  render_prompt "$(cat "$prompt_file")" "$judge_mode" "$label" "$diff_file" "$hash" >"$tmp/rendered-prompt.md"
 
   if ! fx ask --json --no-save --auto \
     --provider "$provider" --model "$model" \

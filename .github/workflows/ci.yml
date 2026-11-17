@@ -169,7 +169,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Run the agent-fx history check
+      - name: Run the agent-fx prompts
         env:
           AGENT_FX_API_KEY: ${{ secrets.AGENT_FX_API_KEY }}
         run: |
@@ -177,4 +177,4 @@ jobs:
             echo "skip: AGENT_FX_API_KEY is not set."
             exit 0
           fi
-          make agent-fx-history
+          make agent-fx-all

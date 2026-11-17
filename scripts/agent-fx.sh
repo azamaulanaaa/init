@@ -167,6 +167,9 @@ main() {
   create_args+=(-e "AGENT_FX_MESSAGE_FILE=$message_file")
   create_args+=(-e "AGENT_FX_MODE=${AGENT_FX_MODE:-staged}")
   create_args+=(-e "AGENT_FX_HISTORY_LIMIT=${AGENT_FX_HISTORY_LIMIT:-20}")
+  if [[ -n "${AGENT_FX_PROMPT:-}" ]]; then
+    create_args+=(-e "AGENT_FX_PROMPT=$AGENT_FX_PROMPT")
+  fi
   if [[ -n "${AGENT_FX_DEBUG:-}" ]]; then
     create_args+=(-e "AGENT_FX_DEBUG=$AGENT_FX_DEBUG")
   fi
