@@ -189,6 +189,11 @@ after a cold init. See [Cache disk](#cache-disk). Set
 `SMOLVM_SERVE_SYNC_DIR` to send one local directory with the run. See
 [Local data upload](#local-data-upload).
 
+`scripts/check-cargo-deny-advisories.sh` fetches the RustSec advisory
+database over the network. Remote mode sets `network: true` in the create
+body, so the fetch works. The offline local pack path cannot fetch the
+database.
+
 ### Environment variables
 
 - `SMOLVM_ADDR` sets the server address. Use a full URL such as
