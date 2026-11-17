@@ -84,6 +84,7 @@ Run these commands to check one area at a time:
 ```bash
 make check-jactionlint
 make check-bash
+make check-cargo
 make check-commits
 make check-dclint
 make check-dockerfmt

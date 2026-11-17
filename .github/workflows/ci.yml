@@ -63,6 +63,9 @@ jobs:
           - name: zizmor
             install_args: zizmor
             script: scripts/check-zizmor.sh
+          - name: cargo
+            install_args: rust
+            script: scripts/check-cargo.sh
     steps:
       - name: Check out the repository
         if: matrix.name != 'commits'
