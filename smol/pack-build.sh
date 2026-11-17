@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
 # Build the cached smolvm pack for the checks.
 # The pack holds the debian base image, mise, and the tools from
-# mise.toml. The repository is mounted at run time. It is not baked in.
+# mise.toml. smol/init.sh provisions the guest. The repository is
+# mounted at run time. It is not baked in. The build refuses to run
+# when SMOLVM_SERVE_ADDR is set.
 # Exit 0 without a pack when smolvm or the host accelerator is not available.
 set -euo pipefail
+
+if [[ -n "${SMOLVM_SERVE_ADDR:-}" ]]; then
+  echo "error: smolvm-pack does not run when SMOLVM_SERVE_ADDR is set. Unset the variable to build a local pack." >&2
+  exit 1
+fi
 
 if ! command -v git >/dev/null 2>&1; then
   echo "error: git is not on PATH. Install git first." >&2
@@ -57,7 +64,7 @@ fi
 
 hash="${1:-}"
 if [[ -z "$hash" ]]; then
-  hash="$(sha256sum mise.toml smol/*.smolfile | sha256sum | cut -d' ' -f1)"
+  hash="$(sha256sum mise.toml smol/*.smolfile smol/pack-build.sh smol/init.sh | sha256sum | cut -d' ' -f1)"
 fi
 
 pack_dir=".cache/smolvm"
@@ -100,60 +107,11 @@ smolvm machine create --name "$build_name" --smolfile smol/base.smolfile \
   -v "$PWD":/workspace:ro
 smolvm machine start --name "$build_name"
 
-# Run each provisioning step on its own. A failed step stops the build.
-# A failed step prints the guest disk usage before the script exits.
-smolvm machine exec --name "$build_name" -- bash -lc \
-  'export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get install -y --no-install-recommends bash ca-certificates curl git && rm -rf /var/lib/apt/lists/*' ||
-  {
-    rc=$?
-    guest_df
-    exit "$rc"
-  }
-smolvm machine exec --name "$build_name" -- bash -lc \
-  'curl --fail --location --silent --show-error https://mise.run | MISE_INSTALL_PATH=/usr/local/bin/mise sh' ||
-  {
-    rc=$?
-    guest_df
-    exit "$rc"
-  }
-smolvm machine exec --name "$build_name" -- bash -lc \
-  'cd /workspace && mise install' ||
-  {
-    rc=$?
-    guest_df
-    exit "$rc"
-  }
-# Delete the mise download cache. The cache is dead weight in the pack.
-# The install is done at this point. Installed tools are not removed.
-smolvm machine exec --name "$build_name" -- bash -lc \
-  'mise cache clear' ||
-  {
-    rc=$?
-    guest_df
-    exit "$rc"
-  }
-smolvm machine exec --name "$build_name" -- bash -lc \
-  'git config --global --add safe.directory /workspace' ||
-  {
-    rc=$?
-    guest_df
-    exit "$rc"
-  }
-# Add the mise shims to the login shell PATH and link the shims into
-# /usr/local/bin. The login shell covers bash -lc. The links cover
-# every other shell shape.
-# The commands expand on the guest, not on this host.
-# shellcheck disable=SC2016
-smolvm machine exec --name "$build_name" -- bash -lc \
-  'shim_dir="$HOME/.local/share/mise/shims"; mkdir -p /etc/profile.d; printf "export PATH=\"%s:\$PATH\"\n" "$shim_dir" > /etc/profile.d/mise.sh' ||
-  {
-    rc=$?
-    guest_df
-    exit "$rc"
-  }
-# shellcheck disable=SC2016
-smolvm machine exec --name "$build_name" -- bash -lc \
-  'shim_dir="$HOME/.local/share/mise/shims"; for shim in "$shim_dir"/*; do [ -e "$shim" ] || continue; ln -sf "$shim" "/usr/local/bin/$(basename "$shim")"; done' ||
+# Provision the guest with the shared init script.
+# The script holds every provisioning step for the local pack build and
+# the remote run. A failed step prints the guest disk usage before the
+# build exits.
+smolvm machine exec --name "$build_name" -- bash /workspace/smol/init.sh ||
   {
     rc=$?
     guest_df

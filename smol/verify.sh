@@ -76,7 +76,7 @@ if ! command -v sha256sum >/dev/null 2>&1; then
   exit 1
 fi
 
-hash="$(sha256sum mise.toml smol/*.smolfile | sha256sum | cut -d' ' -f1)"
+hash="$(sha256sum mise.toml smol/*.smolfile smol/pack-build.sh smol/init.sh | sha256sum | cut -d' ' -f1)"
 pack=".cache/smolvm/ci-${hash}.smolmachine"
 
 # Build the pack when it is missing, as the real run does.
