@@ -1,0 +1,30 @@
+{
+  "provider": "router",
+  "providers": {
+    "router": {
+      "protocol": "openai-chat-completions",
+      "base_url": "https://router.example.com/v1",
+      "auth": { "type": "bearer", "env": "AGENT_FX_API_KEY" },
+      "headers": { "X-Org-Id": { "env": "AGENT_FX_ORG_ID" } },
+      "timeouts": {
+        "connect_ms": 10000,
+        "first_response_ms": 300000,
+        "stall_ms": 120000
+      },
+      "fetch_models": true,
+      "title_model": "small-fast-model",
+      "model_defaults": {
+        "context_window": 65536,
+        "max_output_tokens": 4096,
+        "supports_tool_use": true
+      },
+      "model_metadata": {
+        "PLACEHOLDER_MODEL": {
+          "context_window": 200000,
+          "max_output_tokens": 16000
+        }
+      }
+    }
+  },
+  "models": { "router": "PLACEHOLDER_MODEL" }
+}
