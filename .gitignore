@@ -8,3 +8,6 @@
 
 # smolvm runtime state. Created by any smolvm CLI call from this directory.
 .smolvm/
+
+# Ignore the Cargo build directory.
+target/

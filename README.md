@@ -5,6 +5,29 @@
 The sections below show how to install the hooks, run the checks,
 commit, and release a version.
 
+## Rust starter
+
+This repository includes a minimal Rust project starter. The program
+prints a short greeting when it runs.
+
+Build the project with this command:
+
+```bash
+cargo build
+```
+
+Check the project with this command:
+
+```bash
+cargo check
+```
+
+Run the project with this command:
+
+```bash
+cargo run
+```
+
 ## Customize this template
 
 Replace these values before you use this template:
