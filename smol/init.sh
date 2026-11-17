@@ -55,7 +55,7 @@ run_step() {
 }
 
 run_step "package install" \
-  'export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y --no-install-recommends bash ca-certificates curl git && rm -rf /var/lib/apt/lists/*'
+  'export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y --no-install-recommends bash build-essential ca-certificates curl git && rm -rf /var/lib/apt/lists/*'
 
 # The mise binary lives on the cache disk when one is present. A machine
 # from a published base finds it there and skips the download.
@@ -74,7 +74,6 @@ else
     ln -sf "${cache_dir}/bin/mise" /usr/local/bin/mise
   fi
 fi
-
 run_step "mise tools install" 'cd /workspace && mise install'
 
 # The local pack build keeps its image small. The remote cache path
