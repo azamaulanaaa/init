@@ -143,9 +143,86 @@ serve_exec_rc() {
     head -n 1
 }
 
+# Decode a base64 string into the file named by the second argument.
+# Try GNU base64, then BSD base64, then OpenSSL.
+# Return non-zero when no decoder works.
+serve_decode_b64() {
+  local encoded="$1"
+  local output="$2"
+
+  if command -v base64 >/dev/null 2>&1; then
+    if printf '%s' "$encoded" | base64 -d >"$output" 2>/dev/null; then
+      return 0
+    fi
+    if printf '%s' "$encoded" | base64 -D >"$output" 2>/dev/null; then
+      return 0
+    fi
+  fi
+  if command -v openssl >/dev/null 2>&1; then
+    if printf '%s' "$encoded" | openssl base64 -d -A >"$output" 2>/dev/null; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
+# Print the byte-exact stream from an exec response.
+# Map stdout to stdoutB64. Map stderr to stderrB64.
+# Use the lossy parser when the response has no B64 field.
+serve_print_stream() {
+  local body="$1"
+  local key="$2"
+  local b64_key="${key}B64"
+  local marker="\"${b64_key}\""
+  local text
+  text="${body#*"$marker"}"
+  if [[ "$text" == "$body" ]]; then
+    echo "warning: the exec response has no ${b64_key} field." >&2
+    serve_print_stream_lossy "$body" "$key"
+    return $?
+  fi
+  text="${text#*:}"
+  text="${text#"${text%%[![:space:]]*}"}"
+  if [[ "$text" != \"* ]]; then
+    echo "warning: the exec response has no ${b64_key} value." >&2
+    serve_print_stream_lossy "$body" "$key"
+    return $?
+  fi
+  text="${text#\"}"
+
+  local encoded="${text%%\"*}"
+  local tmp
+  if ! tmp="$(mktemp "${TMPDIR:-/tmp}/smolvm-stream.XXXXXX")"; then
+    echo "error: mktemp failed. Check the temp directory." >&2
+    return 1
+  fi
+  if ! serve_decode_b64 "$encoded" "$tmp"; then
+    rm -f "$tmp"
+    echo "error: no base64 decoder is on PATH." >&2
+    echo "error: install base64 or openssl." >&2
+    return 1
+  fi
+
+  if [[ -s "$tmp" ]]; then
+    cat "$tmp"
+    # Keep the newline framing from the lossy parser.
+    local tail_byte
+    tail_byte="$(
+      tail -c 1 "$tmp"
+      printf 'X'
+    )"
+    if [[ "$tail_byte" != $'\nX' ]]; then
+      printf '\n'
+    fi
+  fi
+  rm -f "$tmp"
+  return 0
+}
+
 # Print one string field from an exec response body.
 # Decode the common JSON escapes before printing the value.
-serve_print_stream() {
+# Use this parser only for responses that have no B64 field.
+serve_print_stream_lossy() {
   local body="$1"
   local key="$2"
   local marker="\"${key}\""
