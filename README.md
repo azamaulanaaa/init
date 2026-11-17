@@ -20,7 +20,9 @@ You need `git` and `make`.
 `make ci` runs the checks inside a smolvm microVM when `smolvm` is on
 `PATH` and the host accelerator is available: `/dev/kvm` on Linux,
 `kern.hv_support=1` on macOS with Apple Silicon. Without them, it
-prints a warning and runs the checks on the host. The microVM runs
+prints a warning and runs the checks on the host. Set
+`SMOLVM_ENABLED=1` to require smolvm. The run then fails with exit
+code 3 instead of using the host. The microVM runs
 offline and mounts the repository read-only at `/workspace`. Run
 `make smolvm-verify` to check the isolation. Set `SMOLVM_SERVE_ADDR` to
 use a remote `smolvm serve` endpoint instead. The remote path needs
@@ -64,7 +66,9 @@ each `scripts/check-*.sh` file in name order. The run stops when a check
 fails. On a host with smolvm and a working accelerator, the checks run
 inside a smolvm microVM. The microVM is offline and mounts the
 repository read-only at `/workspace`. Without them, `make ci` prints a
-warning and runs the checks on the host. Set `SMOLVM_SERVE_ADDR` to run
+warning and runs the checks on the host. Set `SMOLVM_ENABLED=1` to
+require smolvm. The checks then stop with exit code 3 when smolvm
+cannot run. Set `SMOLVM_SERVE_ADDR` to run
 the checks on a remote server. The server has no authentication by
 default. Put it behind an authenticated TLS proxy. Set
 `SMOLVM_SERVE_TOKEN` to send a bearer token. The scripts do not print

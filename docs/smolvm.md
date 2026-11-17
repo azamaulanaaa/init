@@ -11,6 +11,9 @@ Set `SMOLVM_SERVE_ADDR` to send the checks to a `smolvm serve` endpoint on
 another host. The guest command is the same. See
 [Remote mode](#remote-mode).
 
+Set `SMOLVM_ENABLED=1` to require smolvm. The checks then stop when
+smolvm cannot run. See [SMOLVM_ENABLED](#smolvm_enabled).
+
 This sandbox is modeled on the
 [Throwaway machine](https://smolmachines.com/docs/guides/skills/throwaway-machine)
 guide (smolvm v1.34.0, 2026-11-09). Modeled on throwaway-machine.
@@ -40,10 +43,11 @@ the workload here is trusted code.
 - `make smolvm-verify` probes the isolation from inside the guest
   and from the host. A run that exits zero proves nothing. The
   verify step checks the claims.
-- `SMOLVM_ENABLED=0` marks a process that is already inside the
-  microVM. It stops recursion. It also forces the host path on the
-  host. `SMOLVM_GUEST=1` also marks a process inside the guest. See
-  [SMOLVM_ENABLED](#smolvm_enabled).
+- `SMOLVM_ENABLED=0` forces the host path. The guest sets this value,
+  so the checks do not recurse. `SMOLVM_ENABLED=1` requires smolvm and
+  stops the run when smolvm is missing. An unset variable or any other
+  value selects auto mode. `SMOLVM_GUEST=1` marks a process inside the
+  guest. See [SMOLVM_ENABLED](#smolvm_enabled).
 
 ## Verification status
 
@@ -118,32 +122,37 @@ Still unverified:
 ## How it works
 
 `make ci` calls `scripts/ci.sh`. After the `git` preflight and
-before the checks run, `scripts/ci.sh` does the following:
+before the checks run, `scripts/ci.sh` reads `SMOLVM_ENABLED`:
 
-1. If `SMOLVM_ENABLED=0`, it skips the detection and runs the
-    checks natively. No warning is printed. The microVM sets
-    `SMOLVM_ENABLED=0` in the guest command, so this case means the
-    checks are already inside the microVM. Any other value, or an
-    unset variable, takes the auto path in step 2.
-2. Else if `SMOLVM_SERVE_ADDR` has a value, it `exec`s
-    `scripts/smolvm.sh`. The script uses the remote REST path. No
-    host fallback exists in that case.
-3. Else if `smolvm` is on `PATH` and the host accelerator is
-    available, it `exec`s `scripts/smolvm.sh`. The detection is
-    `/dev/kvm` on Linux and `kern.hv_support=1` on macOS with Apple
-    Silicon.
-4. Else it prints a loud warning to stderr and runs the checks on
-    the host as before.
+1. `SMOLVM_ENABLED=0` skips the detection. The script runs the checks
+    on the host. The script prints no warning. The microVM sets this
+    value in the guest command, so the checks do not recurse.
+2. `SMOLVM_ENABLED=1` enforces smolvm. When `SMOLVM_SERVE_ADDR` has a
+    value, the script `exec`s `scripts/smolvm.sh` for the remote path.
+    When `smolvm` is on `PATH` and the host accelerator works, it
+    `exec`s `scripts/smolvm.sh` for a local microVM. Otherwise it
+    prints the enforced-mode error on stderr and exits 3. The checks
+    do not run on the host.
+3. An unset variable or any other value selects auto mode. When
+    `SMOLVM_SERVE_ADDR` has a value, the script uses the remote path.
+    When `smolvm` and the accelerator work, it uses a local microVM.
+    Otherwise it prints the loud warning and runs the checks on the
+    host.
+
+The accelerator check needs a readable `/dev/kvm` on Linux. On macOS
+with Apple Silicon it needs `kern.hv_support=1`.
 
 `scripts/smolvm.sh` does the following:
 
 1. If `SMOLVM_ENABLED=0`, it runs the checks on the host. The
     checks do not recurse.
 2. If `SMOLVM_SERVE_ADDR` has a value, it calls the remote REST
-    path. See [Remote mode](#remote-mode).
+    path. See [Remote mode](#remote-mode). That path is strict.
 3. Else it detects `smolvm` and the host accelerator. If either is
-    missing, it prints the loud warning and `exec`s the host checks
-    with `SMOLVM_ENABLED=0`.
+    missing and `SMOLVM_ENABLED=1`, it prints the enforced-mode
+    error, exits 3, and does not run the checks. If either is missing
+    in auto mode, it prints the loud warning and `exec`s the host
+    checks with `SMOLVM_ENABLED=0`.
 4. It computes the pack cache key. The key is the SHA-256 of the
     `sha256sum` lines of `mise.toml`, every `smol/*.smolfile`,
     `smol/pack-build.sh`, and `smol/init.sh`. The init script holds the
@@ -172,12 +181,28 @@ The loud warning looks like this:
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ```
 
-The warning appears on the host every time `make ci` or `make smolvm`
-runs without a usable smolvm setup, and `SMOLVM_ENABLED` is not `0`.
-The warning appears on stderr. It is easy to
-miss in a long log. Read it when a run feels faster than expected.
-The warning does not appear when `SMOLVM_ENABLED=0` is set, because
-that case is the intended host path.
+The loud warning appears in auto mode only. The scripts print it on
+stderr when `make ci` or `make smolvm` runs without a usable smolvm
+setup. The warning does not appear in enforced mode. It does not appear
+for `SMOLVM_ENABLED=0`. Read the warning when a run feels faster than
+expected.
+
+In enforced mode, the scripts print this error on stderr and exit 3:
+
+```text
+ERROR: SMOLVM_ENABLED=1 requires smolvm.
+smolvm is not on PATH, or the host accelerator is unavailable.
+The checks did not run.
+Install smolvm on the host.
+Give the host a working accelerator.
+Alternatively, set SMOLVM_SERVE_ADDR to use a remote smolvm server.
+See docs/smolvm.md for the requirements.
+```
+
+Exit code 3 makes CI fail when smolvm is unavailable. The error says
+that the checks did not run. Install smolvm and fix the accelerator.
+You can also set `SMOLVM_SERVE_ADDR` for a remote run. Then run the
+checks again.
 
 ## Remote mode
 
@@ -698,11 +723,13 @@ The last example fails. The mount is read-only.
 - `make ci` runs the checks. It uses a remote machine when
   `SMOLVM_SERVE_ADDR` has a value. It uses a local machine when smolvm and
   the accelerator are available. Otherwise it runs on the host with a
-  loud warning.
+  loud warning. With `SMOLVM_ENABLED=1` it exits 3 instead of running the
+  checks on the host.
 - `make smolvm` runs the checks inside smolvm. It uses the remote path
   when `SMOLVM_SERVE_ADDR` has a value. Without a usable local setup and
-  without a remote address it prints the loud warning and falls back to
-  the host checks.
+  without a remote address it prints the loud warning in auto mode and
+  runs the host checks. With `SMOLVM_ENABLED=1` it prints the error and
+  exits 3.
 - `make smolvm-pack` builds the cached pack. It exits 0 without
   building when smolvm or the accelerator is missing. It exits non-zero
   when `SMOLVM_SERVE_ADDR` has a value. Unset the variable first.
@@ -720,17 +747,27 @@ The last example fails. The mount is read-only.
 
 ## SMOLVM_ENABLED
 
-`SMOLVM_ENABLED=0` forces the host path. `scripts/ci.sh` skips the
-microVM detection and runs the checks natively. No warning is
-printed. `scripts/smolvm.sh` does the same and runs the checks
-natively. The checks never recurse into the microVM. This rule also
-holds in remote mode. `SMOLVM_ENABLED=0` stops the remote call.
+`SMOLVM_ENABLED` has three modes:
+
+- `SMOLVM_ENABLED=0` forces the host path. `scripts/ci.sh` skips the
+  microVM detection and runs the checks natively. No warning is printed.
+  `scripts/smolvm.sh` does the same. The checks never recurse into the
+  microVM. This rule also holds in remote mode. The value `0` stops the
+  remote call.
+- `SMOLVM_ENABLED=1` enforces smolvm. The checks must run in a local
+  microVM or on a remote server. When smolvm and the accelerator are
+  missing and no remote address exists, the scripts print an error on
+  stderr and exit 3. The checks do not run on the host. Install smolvm
+  and fix the accelerator. You can also set `SMOLVM_SERVE_ADDR` for a
+  remote run.
+- An unset variable or any other value selects auto mode. A remote
+  address sends the checks to a server. Without a remote address, smolvm
+  with a working accelerator runs the checks in the microVM. Without
+  them, the loud warning prints and the checks run on the host.
 
 Run `SMOLVM_ENABLED=0 make ci` to force the host path on a host that
-can run the microVM. Any other value, or an unset variable, keeps the
-auto behavior: a remote address sends the checks to a server. Without
-one, smolvm with a working accelerator runs the checks in the microVM.
-Without them, the loud warning prints and the checks run on the host.
+can run the microVM. Run `SMOLVM_ENABLED=1 make ci` to require smolvm.
+CI fails with exit code 3 when smolvm cannot run.
 
 The microVM sets `SMOLVM_ENABLED=0` and `SMOLVM_GUEST=1` in the guest
 command. `SMOLVM_GUEST=1` marks a process inside the guest. Set these

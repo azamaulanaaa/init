@@ -21,13 +21,19 @@ start the check pipeline. The `pre-commit` and `pre-push` hooks run
 call `mise`.
 
 `scripts/ci.sh` can hand the run to the smolvm microVM. After the
-`git` preflight, when `SMOLVM_ENABLED` is not `0` and `smolvm` is on
-`PATH` and the host accelerator is available (`/dev/kvm` on Linux,
-`kern.hv_support=1` on macOS with Apple Silicon), it runs
-`scripts/smolvm.sh` and the checks go to a microVM. Otherwise it
-prints a warning to stderr and runs the checks on the host. Set
-`SMOLVM_ENABLED=0` to force the host path. The microVM runs offline
-and mounts the repository read-only at
+`git` preflight it reads `SMOLVM_ENABLED`. The value `0` forces the
+host path. The script prints no warning. The value `1` enforces smolvm.
+The checks must run in a local microVM or on a remote server.
+
+When enforced mode finds no usable smolvm and no remote address,
+`scripts/ci.sh` prints an error on stderr and exits 3. The checks do
+not run on the host. An unset variable or any other value selects auto
+mode. With `smolvm` on `PATH` and a working accelerator (`/dev/kvm` on
+Linux, `kern.hv_support=1` on macOS with Apple Silicon), it runs
+`scripts/smolvm.sh`. Otherwise it prints a warning and runs the
+checks on the host.
+
+The microVM runs offline and mounts the repository read-only at
 `/workspace`. `make smolvm-verify` checks that the isolation holds.
 The [smolvm document](smolvm.md) describes this path.
 
@@ -107,9 +113,10 @@ optional. Run `make help` to list the available targets.
 `PATH` and the host accelerator is available (`/dev/kvm` on Linux,
 `kern.hv_support=1` on macOS with Apple Silicon). Without them it
 prints a warning to stderr and runs the checks on the host. Set
-`SMOLVM_SERVE_ADDR` to use a remote server instead. The remote path
-needs `curl` and `tar` on `PATH`. The [smolvm document](smolvm.md)
-lists the requirements.
+`SMOLVM_ENABLED=1` to require smolvm. The run then fails with exit
+code 3 instead of using the host. Set `SMOLVM_SERVE_ADDR` to use a
+remote server instead. The remote path needs `curl` and `tar` on
+`PATH`. The [smolvm document](smolvm.md) lists the requirements.
 
 ### Run all checks
 
