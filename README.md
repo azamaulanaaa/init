@@ -86,6 +86,10 @@ make check-jactionlint
 make check-bash
 make check-cargo
 make check-clippy
+make check-cargo-deny-advisories
+make check-cargo-deny-bans
+make check-cargo-deny-licenses
+make check-cargo-deny-sources
 make check-commits
 make check-dclint
 make check-dockerfmt

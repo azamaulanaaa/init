@@ -69,6 +69,18 @@ jobs:
           - name: clippy
             install_args: rust
             script: scripts/check-clippy.sh
+          - name: cargo-deny-advisories
+            install_args: "rust cargo-deny"
+            script: scripts/check-cargo-deny-advisories.sh
+          - name: cargo-deny-bans
+            install_args: "rust cargo-deny"
+            script: scripts/check-cargo-deny-bans.sh
+          - name: cargo-deny-licenses
+            install_args: "rust cargo-deny"
+            script: scripts/check-cargo-deny-licenses.sh
+          - name: cargo-deny-sources
+            install_args: "rust cargo-deny"
+            script: scripts/check-cargo-deny-sources.sh
     steps:
       - name: Check out the repository
         if: matrix.name != 'commits'
