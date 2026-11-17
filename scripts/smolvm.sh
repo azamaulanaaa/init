@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Run the checks inside a smolvm microVM against the live working tree.
-# Fall back to the host checks when smolvm or the host accelerator is not available.
+# SMOLVM_ENABLED=1 stops the run when smolvm is unavailable.
 set -euo pipefail
+
+# Exit code 3 means the run cannot use smolvm in enforced mode.
+readonly SMOLVM_ENFORCED_RC=3
 
 if ! command -v git >/dev/null 2>&1; then
   echo "error: git is not on PATH. Install git first." >&2
@@ -24,9 +27,21 @@ print_warning() {
 EOF
 }
 
+print_enforced_error() {
+  cat >&2 <<'EOF'
+ERROR: SMOLVM_ENABLED=1 requires smolvm.
+smolvm is not on PATH, or the host accelerator is unavailable.
+The checks did not run.
+Install smolvm on the host.
+Give the host a working accelerator.
+Alternatively, set SMOLVM_SERVE_ADDR to use a remote smolvm server.
+See docs/smolvm.md for the requirements.
+EOF
+}
+
 # Detect whether this host can run a smolvm machine.
 # Linux needs a readable /dev/kvm.
-# macOS on Apple Silicon uses the built-in hypervisor; kern.hv_support must be 1.
+# macOS on Apple Silicon needs kern.hv_support=1.
 host_accel_ok() {
   command -v smolvm >/dev/null 2>&1 || return 1
   case "$(uname -s)" in
@@ -57,6 +72,10 @@ if [[ -n "${SMOLVM_SERVE_ADDR:-}" ]]; then
 fi
 
 if ! host_accel_ok; then
+  if [[ "${SMOLVM_ENABLED:-}" == "1" ]]; then
+    print_enforced_error
+    exit "$SMOLVM_ENFORCED_RC"
+  fi
   print_warning
   export SMOLVM_ENABLED=0
   exec scripts/ci.sh
