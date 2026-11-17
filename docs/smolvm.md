@@ -156,7 +156,10 @@ with Apple Silicon it needs `kern.hv_support=1`.
 4. It computes the pack cache key. The key is the SHA-256 of the
     `sha256sum` lines of `mise.toml`, every `smol/*.smolfile`,
     `smol/pack-build.sh`, and `smol/init.sh`. The init script holds the
-    provisioning steps. A change to it must build a new pack.
+    provisioning steps. A change to it must build a new pack. The key
+    also includes `SMOLVM_CPUS` and `SMOLVM_MEMORY_MB` when either
+    value differs from its default. A different value builds a
+    different pack.
 5. It builds the pack when `.cache/smolvm/ci-<key>.smolmachine` is
     missing. It calls `smol/pack-build.sh` for the build.
 6. It runs `smolvm machine run --from <pack> --timeout 10m -v
@@ -224,6 +227,15 @@ No new runtime is added. The repository is not baked into a machine image.
   tools already installed.
 - `SMOLVM_SERVE_TIMEOUT` sets the curl timeout in seconds. The default
   value is `120`. The local path still uses `SMOLVM_TIMEOUT`.
+- `SMOLVM_CPUS` sets the CPU count of the machine. The default value is
+  `1`. The value must be a positive integer.
+- `SMOLVM_MEMORY_MB` sets the memory of the machine in MiB. The default
+  value is `512`. The value must be a positive integer.
+
+`SMOLVM_CPUS` and `SMOLVM_MEMORY_MB` also set the resources of the local
+build machine. The scripts stop when either value is not a positive
+integer. A change to either value builds a new pack. Remote mode does
+not use the pack, but it sends both values in the create body.
 
 When `SMOLVM_SERVE_ADDR` is set, the scripts need a reachable server. They
 require a successful remote run. They never run the checks or the user
@@ -418,8 +430,11 @@ a property of the machine.
 
 `make smolvm-pack` builds the pack. The build does the following:
 
-1. Creates a machine from `smol/base.smolfile`. The repository is
-    mounted at `/workspace` with the `:ro` flag.
+1. Renders `smol/base.smolfile` with the selected resource values. The
+    file holds placeholders. The build writes a temporary smolfile with
+    the values from `SMOLVM_CPUS` and `SMOLVM_MEMORY_MB`. It creates the
+    machine from that file. The repository is mounted at `/workspace`
+    with the `:ro` flag.
 2. Installs `bash`, `ca-certificates`, `curl`, and `git` with
     `apt-get`.
 3. Installs mise to `/usr/local/bin/mise` with the mise.run script.
@@ -431,13 +446,15 @@ a property of the machine.
     `/etc/profile.d/mise.sh`. It also links the shims into
     `/usr/local/bin` so non-login shells find the tools.
 8. Stops the machine.
-9. Runs `smolvm pack create --from-vm <name> --cpus 1 --mem 512
-    -o .cache/smolvm/ci-<key>`. On smolvm v1.35.1 the `-o` value names
-    the executable stub. The sidecar `ci-<key>.smolmachine` is created
-    automatically as `<output>.smolmachine`. An `-o` value that ends in
-    `.smolmachine` is rejected. `--single-file` does not change this.
-    The stub is capped at 1 vCPU and 512 MiB of memory. The caps are
-    not reservations.
+9. Runs `smolvm pack create --from-vm <name> --cpus <cpus> --mem <mem>
+    -o .cache/smolvm/ci-<key>`. The `<cpus>` and `<mem>` values come
+    from `SMOLVM_CPUS` and `SMOLVM_MEMORY_MB`. On smolvm v1.35.1 the
+    `-o` value names the executable stub. The sidecar
+    `ci-<key>.smolmachine` is created automatically as
+    `<output>.smolmachine`. An `-o` value that ends in `.smolmachine`
+    is rejected. `--single-file` does not change this. The stub is
+    capped at the selected CPU count and memory size. The caps are not
+    reservations.
 10. Deletes the build machine.
 
 If a failure happens before the pack create succeeds, the trap
@@ -460,9 +477,11 @@ partial artifacts: the stub `ci-<key>` and the sidecar
 The pack cache key covers `mise.toml`, `smol/pack-build.sh`,
 `smol/init.sh`, and every `smol/*.smolfile`. The init script holds the
 provisioning steps. Change one of these files and the next
-`make smolvm-pack` builds a new pack. The old pack stays in
-`.cache/smolvm/` until `make smolvm-clean` removes it. Remote mode does
-not use this pack.
+`make smolvm-pack` builds a new pack. The key also covers
+`SMOLVM_CPUS` and `SMOLVM_MEMORY_MB` when a value differs from its
+default. A pack built for one resource setting is not reused for
+another setting. The old pack stays in `.cache/smolvm/` until
+`make smolvm-clean` removes it. Remote mode does not use this pack.
 
 The pack does not contain the repository. `pack create --from-vm`
 captures the machine disk, and the disk has an empty `/workspace`
@@ -807,7 +826,8 @@ CLI reference.
 4. The `[artifact]` table in `smol/base.smolfile` is documented for
     packs created from a Smolfile. The documentation does not state
     whether it is read for `pack create --from-vm`. The build passes
-    `--cpus 1 --mem 512` as flags as well. Both mechanisms cap CPU and
+    `--cpus <cpus> --mem <mem>` as flags as well. The values come from
+    `SMOLVM_CPUS` and `SMOLVM_MEMORY_MB`. Both mechanisms cap CPU and
     memory at the same values on purpose. Caps are not reservations.
     Whether the `[artifact]` table is honored for `--from-vm` packs is
     not confirmed.

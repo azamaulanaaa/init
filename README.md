@@ -41,6 +41,12 @@ With a remote address, `make smolvm-clean` also deletes
 verified over HTTP yet. See the
 [smolvm documentation](docs/smolvm.md).
 
+Set `SMOLVM_CPUS` to change the CPU count of the microVM. Set
+`SMOLVM_MEMORY_MB` to change its memory in MiB. The defaults are 1 CPU
+and 512 MiB. Each value must be a positive integer. The local sandbox
+and the remote machine both use these values. The scripts stop when a
+value is not a positive integer.
+
 The checks need `cog`, `dclint`, `dockerfmt`, `editorconfig-checker`,
 `gitleaks`, `hadolint`, `jactionlint`, `markdownlint-cli2`, `shellcheck`,
 `shfmt`, and `zizmor`. If you use [`mise`](https://mise.jdx.dev/), run

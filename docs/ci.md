@@ -37,6 +37,12 @@ The microVM runs offline and mounts the repository read-only at
 `/workspace`. `make smolvm-verify` checks that the isolation holds.
 The [smolvm document](smolvm.md) describes this path.
 
+Set `SMOLVM_CPUS` to change the CPU count of the microVM. Set
+`SMOLVM_MEMORY_MB` to change its memory in MiB. The defaults are 1 CPU
+and 512 MiB. Each value must be a positive integer. The local machine
+and the remote machine both use the values. The scripts stop when a
+value is not valid. See the [smolvm document](smolvm.md).
+
 Set `SMOLVM_SERVE_ADDR` to send the checks to a remote `smolvm serve`
 endpoint. `scripts/ci.sh` then calls `scripts/smolvm.sh`, which uses HTTP.
 The checks run in a machine on that server. The working tree is uploaded
