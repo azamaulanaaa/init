@@ -50,7 +50,9 @@ The sandbox uses three controls:
 
 - Offline by default. The VM runs a baked `.smolmachine` pack from
   the local cache. The pack run asks the registry for nothing.
-  Network access happens during the pack build only.
+  Network access happens during the pack build only on the local path.
+  The cargo-deny advisories check needs network access in remote mode.
+  The offline pack run cannot fetch the RustSec database.
 - The repository is mounted with the `:ro` flag. The guest kernel
   refuses writes to it. The checks never write the repository.
 - `make smolvm-preflight` reports whether this host can run the
@@ -81,7 +83,9 @@ The sandbox uses three controls:
   a base image prepared on the server. See [Remote mode](#remote-mode).
 - Network access in the guest during the pack build. The build
   installs packages with `apt-get` and mise with the mise.run
-  script. The checks themselves do not need the network.
+  script. The checks themselves do not need the network on the
+  local pack path. The cargo-deny advisories check needs network
+  access to fetch the RustSec database in remote mode.
 
 ## How it works
 
@@ -738,15 +742,19 @@ shell. Keep the server and its proxy on a trusted network.
 The pack is a baked artifact built ahead of time. A
 `smolvm machine run --from <pack>` run asks the registry for nothing.
 The host asks the registry only for `--oci-cache` runs. No step in the
-check path passes `--oci-cache`, so the checks run with no network.
+check path passes `--oci-cache`, so the local pack checks run with no
+network. The cargo-deny advisories check needs network access to fetch
+the RustSec database. Remote mode sets `network: true` for that fetch.
+The offline pack path cannot fetch the database.
 
-The pack build is the only step with a network. Nothing untrusted
-runs during the build. The build machine mounts the repository at
-`/workspace` with the `:ro` flag and only reads `mise.toml` from it.
+The pack build is the only step with a network on the local path.
+Nothing untrusted runs during the build. The build machine mounts the
+repository at `/workspace` with the `:ro` flag and only reads
+`mise.toml` from it.
 
 This is materially stronger isolation than a run with egress rules. A
 filter on egress depends on the workload's cooperation. No network is
-a property of the machine.
+a property of the local pack machine.
 
 ## The pack
 
@@ -1049,8 +1057,10 @@ resources. Remove such a resource by hand after you check its owner.
 `make smolvm-exec` runs one arbitrary command inside the sandbox. The
 sandbox shape is the same as the checks: the cached pack (built first
 when it is missing, exactly as `scripts/smolvm.sh` builds it), the
-repository mounted read-only at `/workspace`, no network, and a
-`--timeout` backstop. The timeout defaults to `10m`. Override it with
+repository mounted read-only at `/workspace`, no network on the local
+pack path, and a `--timeout` backstop. The cargo-deny advisories check
+cannot fetch the RustSec database on this offline path. The timeout
+defaults to `10m`. Override it with
 `SMOLVM_TIMEOUT`. `SMOLVM_ENABLED=0` and `SMOLVM_GUEST=1` are set for the
 command. A `bash scripts/ci.sh` inside it takes the native path.
 
@@ -1237,8 +1247,10 @@ Check these points on your smolvm version.
     macOS path is untested. The v1.24.0 to v1.29.0 `--oci-cache`
     regression (#1819) does not apply to pack `--from` runs.
 8. The pack build needs inbound network access to the Debian and
-    mise release endpoints. The check runs need no network. The guest
-    `apt-get` step is noninteractive.
+    mise release endpoints. The local pack check runs need no network.
+    The cargo-deny advisories check fetches the RustSec database and
+    needs network access in remote mode. The guest `apt-get` step is
+    noninteractive.
 9. The pack may carry `net=true` from the build machine's Smolfile.
     If `make smolvm-verify` prints `inside_network=...actual=REACHED`,
     open an issue. See
