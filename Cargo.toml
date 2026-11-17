@@ -5,3 +5,13 @@ edition = "2021"
 description = "A minimal Rust project starter."
 
 [dependencies]
+
+[lints.clippy]
+all = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+dbg_macro = "deny"
