@@ -13,6 +13,18 @@ if command -v git >/dev/null 2>&1; then
   fi
 fi
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Print the names of the remote machines made by this tool.
+# Parse the JSON list with grep and sed. No jq is needed.
+remote_names() {
+  local body="$1"
+  printf '%s' "$body" |
+    grep -o '"name"[[:space:]]*:[[:space:]]*"smolvm-remote-[^"]*"' |
+    sed -n 's/.*:[[:space:]]*"\(smolvm-remote-[^"]*\)".*/\1/p' |
+    sort -u
+}
+
 # Print one machine name per line.
 # Try the JSON list with python3 first.
 # Fall back to the quiet text list when python3 is absent or the
@@ -81,6 +93,25 @@ else
     echo "kept=$kept"
   else
     echo "note: machine cleanup was skipped. The machine list failed." >&2
+  fi
+fi
+
+if [[ -n "${SMOLVM_SERVE_ADDR:-}" ]]; then
+  # shellcheck source=scripts/smolvm-serve.sh
+  source "$script_dir/smolvm-serve.sh"
+  if serve_init; then
+    if machine_list="$(serve_request GET /api/v1/machines 2>&1)"; then
+      while IFS= read -r name; do
+        [[ -n "$name" ]] || continue
+        if serve_request DELETE "/api/v1/machines/${name}" >/dev/null 2>&1; then
+          echo "deleted=$name"
+        else
+          echo "delete_failed=$name" >&2
+        fi
+      done < <(remote_names "$machine_list")
+    else
+      echo "note: the remote machine list failed." >&2
+    fi
   fi
 fi
 
