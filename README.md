@@ -5,6 +5,29 @@
 The sections below show how to install the hooks, run the checks,
 commit, and release a version.
 
+## Node and Vite starter
+
+This repository includes a minimal Node and Vite starter. It holds one
+TypeScript module and one test. npm manages the packages.
+
+Install the dependencies with this command:
+
+```bash
+npm ci
+```
+
+Run these npm scripts from the repository root:
+
+| Script | Action |
+| --- | --- |
+| `npm run dev` | Start the Vite development server. |
+| `npm run build` | Check the types and build the site. |
+| `npm run preview` | Serve the built site. |
+| `npm run test` | Run the tests with Vitest. |
+| `npm run format` | Format the code with Prettier. |
+| `npm run format:check` | Check the code format with Prettier. |
+| `npm run audit` | Check the packages for high severity advisories. |
+
 ## Customize this template
 
 Replace these values before you use this template:
@@ -69,12 +92,15 @@ make check-gitleaks
 make check-hadolint
 make check-markdown
 make check-mise
+make check-node
 make check-shfmt
 make check-zizmor
 ```
 
 `make check-mise` prints a skip message and exits 0 when `mise` is
-absent. `make help` lists every target.
+absent. `make check-node` prints a skip message and exits 0 when
+`node`, `npm`, or `package.json` is absent. `make help` lists every
+target.
 
 The checks do not change files. They report a problem and exit non-zero.
 
@@ -144,6 +170,7 @@ fails.
 Run these commands to apply one formatter at a time:
 
 ```bash
+make format-node
 make format-shfmt
 make format-dockerfmt
 make format-dclint

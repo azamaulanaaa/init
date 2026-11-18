@@ -179,6 +179,7 @@ make check-gitleaks
 make check-hadolint
 make check-markdown
 make check-mise
+make check-node
 make check-shfmt
 make check-zizmor
 ```
@@ -189,7 +190,8 @@ These targets call `scripts/check-jactionlint.sh`,
 `scripts/check-editorconfig.sh`, `scripts/check-gitleaks.sh`,
 `scripts/check-hadolint.sh`,
 `scripts/check-markdown.sh`, `scripts/check-mise.sh`,
-`scripts/check-shfmt.sh`, and `scripts/check-zizmor.sh`.
+`scripts/check-node.sh`, `scripts/check-shfmt.sh`, and
+`scripts/check-zizmor.sh`.
 
 Run this command from the repository root:
 
@@ -203,6 +205,11 @@ set of checked-out files in the repository.
 
 `scripts/check-mise.sh` prints a skip message and exits 0 when `mise` is
 absent. The script skips the check on purpose.
+
+`scripts/check-node.sh` installs the packages with `npm ci`. Then it
+runs `npm run test`, `npm run format:check`, `npm run build`, and
+`npm run audit`. The script prints a skip message and exits 0 when
+`node`, `npm`, or `package.json` is absent.
 
 ### Format the files
 
@@ -219,12 +226,14 @@ make format
 prints `run: <script>` before each script. It stops when a formatter
 fails. It prints `all formatting applied (N scripts)` after the last
 script. When no format script exists, it prints `no format scripts` and
-exits 0. The run includes `scripts/format-shfmt.sh`,
-`scripts/format-dockerfmt.sh`, and `scripts/format-dclint.sh`.
+exits 0. The run includes `scripts/format-node.sh`,
+`scripts/format-shfmt.sh`, `scripts/format-dockerfmt.sh`, and
+`scripts/format-dclint.sh`.
 
 Run these commands to apply one formatter at a time:
 
 ```bash
+make format-node
 make format-shfmt
 make format-dockerfmt
 make format-dclint
@@ -241,6 +250,10 @@ write.
 
 `scripts/format-dclint.sh` runs `dclint --fix` on the Docker Compose
 files. The check script `scripts/check-dclint.sh` runs `dclint` on the same
+files. The check script does not write.
+
+`scripts/format-node.sh` runs `npm run format` with Prettier. The check
+script `scripts/check-node.sh` runs `npm run format:check` on the same
 files. The check script does not write.
 
 The workflow runs the check scripts only. Commit the changed files after
@@ -379,7 +392,7 @@ can drift and produce different results.
 
 The workflow [`ci.yml`](../.github/workflows/ci.yml) runs the checks on
 GitHub Actions. It runs on each pull request and each push to `main`.
-The workflow has one matrix job with ten entries plus four extra jobs.
+The workflow has one matrix job with eleven entries plus four extra jobs.
 
 Each check job uses the `jdxcode/mise` image on the `ubuntu-24.04` runner.
 The image provides `mise`, `git`, `curl`, and CA certificates. It provides
@@ -390,7 +403,7 @@ Pin each image by digest and each action by commit SHA. Add a comment
 that names the version of the pin. A fixed version gives the same result
 on each run.
 
-One matrix job runs the ten check scripts. Each matrix entry sets the
+One matrix job runs the eleven check scripts. Each matrix entry sets the
 tool that its check needs. The matrix entry for `mise` installs no tool.
 
 The workflow has no release job. The release stays local. The
@@ -398,7 +411,7 @@ The workflow has no release job. The release stays local. The
 
 ### Required status checks
 
-The fourteen job names are the status check names:
+The fifteen job names are the status check names:
 
 - `mise`
 - `jactionlint`
@@ -410,6 +423,7 @@ The fourteen job names are the status check names:
 - `dockerfmt`
 - `dclint`
 - `zizmor`
+- `node`
 - `PR title`
 - `gitleaks`
 - `editorconfig`
@@ -417,7 +431,7 @@ The fourteen job names are the status check names:
 
 `PR title` and `dependency-review` run only on pull requests.
 
-Set these fourteen names as required status checks on the default branch.
+Set these fifteen names as required status checks on the default branch.
 Configure branch protection or rulesets on GitHub. Set them in the
 repository settings. Do not set them in the repository files.
 
