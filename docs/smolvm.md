@@ -271,7 +271,12 @@ source it. One run follows these steps:
 10. Call `POST /api/v1/machines/<name>/exec` to run `bash
     /workspace/smol/init.sh`. Init output appears on the console. A
     non-zero `exitCode` stops the run.
-11. Call `POST /api/v1/machines/<name>/exec` to run the guest command.
+11. Call `POST /api/v1/machines/<name>/exec/stream` to run the guest
+    command. This endpoint returns Server-Sent Events. The client prints
+    each output event when it arrives. It reads `exitCode` from the exit
+    event. When the stream gives no output and no exit code, the client
+    uses the buffered path. The client then calls `POST
+    /api/v1/machines/<name>/exec` for the same command.
 12. Call `DELETE /api/v1/machines/<name>` to delete the machine.
 
 Both modes use the same guest command. It is
@@ -279,9 +284,10 @@ Both modes use the same guest command. It is
 For `make smolvm-exec` the command runs with the same two variables.
 
 An exec call returns HTTP 200 when the guest command fails. The helper
-reads `exitCode` from the response body. The guest exit code becomes the
-exit code of the script. The exit trap deletes the machine on every path.
-The trap also removes the local archive.
+reads `exitCode` from the response body. A stream call gives the same
+value in its exit event. The guest exit code becomes the exit code of
+the script. The exit trap deletes the machine on every path. The trap
+also removes the local archive and the stream state directory.
 
 ### Serve API reference
 
@@ -301,6 +307,9 @@ different API version.
 | POST | `/api/v1/machines/{id}/exec` | Run a command. | Req: `command` |
 | | | | Resp: `exitCode`, `stdout`, `stderr` |
 | | | | Resp: `stdoutB64`, `stderrB64` (byte-exact) |
+| POST | `/api/v1/machines/{id}/exec/stream` | Stream command output. | |
+| | | | Req: `command` |
+| | | | Resp: SSE events with `stdout`, `stderr`, `exitCode` |
 | PUT | `/api/v1/machines/{id}/files/{path}` | Upload archive. | `id`, `path` |
 | | | | Body: `application/octet-stream` |
 | GET | `/api/v1/machines` | List machines. | Read `name` from each item. |
@@ -357,8 +366,6 @@ The 0.5.2 spec also lists these endpoints. This repository does not call
 them. The list below describes the spec only. It makes no promise about a
 server implementation.
 
-- `POST /api/v1/machines/{id}/exec/stream` streams stdout and stderr as
-  Server-Sent Events.
 - `GET /api/v1/machines/{id}/logs?source=workload` streams the workload's
   stdout and stderr.
 - `GET /api/v1/machines/{id}/files/{path}` downloads a file as a raw byte
