@@ -1615,6 +1615,8 @@ serve_run_remote() {
   tarball_name="${tarball##*/}"
   if ! tar -C "$repo_root" \
     --exclude=.git --exclude=.cache \
+    --exclude=.venv --exclude=__pycache__ --exclude=.pytest_cache \
+    --exclude=.ruff_cache \
     --exclude="*/$stage_name" --exclude="*/$tarball_name" \
     -cf - . |
     tar -C "$stage" -xf -; then
