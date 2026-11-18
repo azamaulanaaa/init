@@ -63,6 +63,9 @@ jobs:
           - name: zizmor
             install_args: zizmor
             script: scripts/check-zizmor.sh
+          - name: node
+            install_args: node
+            script: scripts/check-node.sh
     steps:
       - name: Check out the repository
         if: matrix.name != 'commits'
