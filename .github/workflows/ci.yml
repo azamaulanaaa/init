@@ -96,6 +96,11 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Install a C toolchain for Rust checks
+        if: contains(matrix.install_args, 'rust')
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends build-essential
       - name: Install tools with cache
         if: matrix.install_args != ''
         uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
