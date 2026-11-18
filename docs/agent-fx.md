@@ -67,33 +67,35 @@ wrapper. The cleanup trap still runs when the wrapper ends a command.
 The host needs `jq` on `PATH`. The pack installs jq through mise, so the
 guest has jq too. Both scripts warn and exit 0 when jq is missing.
 
-The driver forwards `AGENT_FX_MODE` and `AGENT_FX_HISTORY_LIMIT` into
-the guest with `-e`. Both are plain values, not secrets.
+The driver forwards `AGENT_FX_MODE`, `AGENT_FX_HISTORY_LIMIT`, and
+`AGENT_FX_PROMPT` into the guest with `-e`. All three are plain values,
+not secrets. The driver omits `AGENT_FX_PROMPT` when no name is set.
 
 The check runs fx from a temporary workspace. The mise shim needs the
 repository `mise.toml` to resolve the fx version there. The script sets
 `MISE_GLOBAL_CONFIG_FILE` to that file before it calls fx.
 
-Copy `.fx/settings.json.example` to `.fx/settings.json` in the repository root. The tracked
-template holds the endpoint, the model, and the auth fields. The local
-`.fx/settings.json` is not committed. Keep a local copy and set it aside with `git
-stash` when needed. It holds no secret. The bearer key comes from
-`AGENT_FX_API_KEY`. No `AGENT_FX_CONFIG` variable exists.
+Copy `.fx/settings.json.example` to `.fx/settings.json` under `.fx`. The
+tracked template holds the endpoint, the model, and the auth fields. The
+local `.fx/settings.json` is not committed. Keep a local copy and set it
+aside with `git stash` when needed. It holds no secret. The bearer key comes
+from `AGENT_FX_API_KEY`. No `AGENT_FX_CONFIG` variable exists.
 
 The guest mounts the repository read-only at `/workspace`. The check reads
-`/workspace/.fx/settings.json` from that mount. The driver reads `./.fx/settings.json` on the
-host to find the endpoint host for `--allow-host`.
+`/workspace/.fx/settings.json` from that mount. The host driver reads
+`./.fx/settings.json` to find the endpoint host for `--allow-host`.
 
 ### Why the config lives in the repository
 
-`.fx/settings.json` lives in the repository root. The read-only `/workspace` mount
-carries it into the guest. The check does not use a system-wide fx
-profile such as `~/.fx/settings.json`. The endpoint and the model stay in
-the repository. They must stay the same across runs and machines.
+`.fx/settings.json` lives in the repository root. The read-only
+`/workspace` mount carries it into the guest. The check does not use a
+system-wide fx profile. The endpoint and the model stay in the repository.
+They must stay the same across runs and machines.
 
-The script sets `FX_HOME` to a temporary directory. It builds the fx
-settings from `.fx/settings.json`. A global fx config cannot change the model that
-this check uses.
+A bare `fx` in the repository reads `.fx.json`, not `.fx/settings.json`.
+This is accepted. The check copies `.fx/settings.json` into `FX_HOME` as
+`settings.json` before it calls fx. A global fx config cannot change the
+model that this check uses.
 
 `.fx/settings.json` uses the fx settings format. It declares one custom connection.
 Use only documented fields:
@@ -159,6 +161,98 @@ bytes of each diff.
 
 The check does not write to `/workspace`. It builds its prompt in a
 temporary directory.
+
+## Prompt templates
+
+The check keeps its prompts in `.fx/prompt/` at the repository root. Each
+file in that directory is one prompt template. The file name without `.md`
+is the prompt name. Commit every prompt that the team needs. Add more files
+to create more prompts.
+
+A prompt is a regular Markdown file. fx sends the selected file as its
+normal prompt. fx uses its own system prompt. The check does not add a
+system prompt.
+
+Set `AGENT_FX_PROMPT` on the host to select a prompt. The driver forwards
+the name into the guest as a plain value. It is not a secret. When the name
+is unset, the check uses the default prompt. The committed
+`.fx/prompt/default.md` holds the original instructions.
+
+A name starts with a letter or a digit. It can hold letters, digits, dots,
+underscores, and hyphens. Do not use a path separator. When the name is not
+valid, the check warns and exits 0. When the file is missing, not readable,
+or empty, the check warns and exits 0. The check never fails the build
+because of a prompt.
+
+When the repository under test has no `.fx/prompt/` directory, the check
+reads the prompts shipped beside `scripts/check-agent-fx.sh`. This fallback
+keeps the check usable in a repository that carries no prompts.
+
+### Prompt content
+
+Every prompt must end with one JSON object. The object has exactly two
+fields: `verdict` and `reason`. `verdict` is the exact string `PASS` or
+`FAIL`. `reason` is a string, and it may be empty. The prompt states that
+the agent writes no text around the object and uses no markdown fence. The
+check validates the object. A bad shape warns and exits 0.
+
+A prompt may name a skill from `.fx/skills`. The default prompt permits a
+skill when one is relevant. The check copies `.fx/skills` and `.fx/prompt`
+into the temporary workspace so fx can find them.
+
+### Skills
+
+Skills stay in `.fx/skills/<name>/SKILL.md`. This is the fx discovery
+layout. Each skill starts with YAML front matter:
+
+```md
+---
+name: strict
+description: Use this skill when the agent-fx check needs strict review.
+---
+```
+
+The `name` field is required. The `description` field states when to use
+the skill. The committed `default` skill is reusable. A prompt may name it
+or may name another skill. Add a skill by creating a new directory under
+`.fx/skills` with a `SKILL.md` file.
+
+### Placeholders
+
+The check replaces each placeholder before it calls fx. A placeholder uses
+double braces. The check supports these names:
+
+| Placeholder | Staged value | History value |
+| --- | --- | --- |
+| `{{MODE}}` | `staged` | `history` |
+| `{{LABEL}}` | `staged change` | The commit hash |
+| `{{MESSAGE_FILE}}` | `commit-message.txt` | `commit-message.txt` |
+| `{{CHANGE_FILE}}` | `staged.diff` | `commit.diff` |
+| `{{HASH}}` | An empty string | The commit hash |
+
+The check copies the message to `commit-message.txt`. It copies the staged
+diff to `staged.diff`. It copies each commit diff to `commit.diff`. The files
+live in the temporary workspace. The prompt names them. fx reads them with
+the read tools.
+
+The check leaves any other placeholder text as written. Use only the names
+in the table. A wrong name stays in the prompt. The agent may then return no
+verdict, and the check warns.
+
+### Add a prompt
+
+1. Copy `.fx/prompt/default.md` to a new file in `.fx/prompt/`. Use a name
+    such as `strict.md`.
+2. Keep the JSON verdict instructions. The check accepts only a JSON object
+    with `verdict` and `reason`.
+3. Commit the new prompt.
+4. Run `AGENT_FX_PROMPT=strict make agent-fx` to select the prompt. Run
+    `AGENT_FX_PROMPT=strict make agent-fx-history` for history mode.
+
+Several prompts can stay in the directory at the same time. Set a different
+name for each run. `make agent-fx-all` runs every prompt in history mode.
+The target ignores a caller value of `AGENT_FX_PROMPT`. It fails when one
+prompt fails. CI uses this target so that every prompt is checked.
 
 ## Verdict in JSON
 
@@ -235,8 +329,8 @@ Keep the offline checks in `make ci` as the required gate.
 Three call sites use the driver. The `commit-msg` hook calls it in staged
 mode after `cog verify`. It passes the message file path from Git. The
 `pre-push` hook runs `scripts/ci.sh` first, then the driver in history
-mode. The GitHub Actions `agent-fx` job runs `make agent-fx-history`
-with full history.
+mode. The GitHub Actions `agent-fx` job runs `make agent-fx-all` with
+full history. That target checks every prompt template.
 
 The CI job runs only when the repository variable `AGENT_FX_ENABLED` is
 `true`. It also needs the `AGENT_FX_API_KEY` secret. The job skips the
@@ -254,6 +348,7 @@ Run these commands to test the modes:
 ```bash
 make test-agent-fx
 make test-agent-fx-history
+make test-agent-fx-prompts
 make test-commit-lifecycle
 ```
 
