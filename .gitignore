@@ -8,3 +8,12 @@
 
 # smolvm runtime state. Created by any smolvm CLI call from this directory.
 .smolvm/
+
+# Ignore the Node dependency directory.
+node_modules/
+
+# Ignore the Vite build output.
+dist/
+
+# Ignore the test coverage output.
+coverage/
