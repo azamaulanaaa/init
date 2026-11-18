@@ -49,7 +49,7 @@ jobs:
             install_args: cocogitto
             script: scripts/check-commits.sh
           - name: markdown
-            install_args: "node markdownlint-cli2"
+            install_args: "node npm:markdownlint-cli2"
             script: scripts/check-markdown.sh
           - name: hadolint
             install_args: hadolint
