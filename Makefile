@@ -1,7 +1,7 @@
 SHELL := bash
 .DEFAULT_GOAL := help
 
-.PHONY: help ci smolvm smolvm-pack smolvm-clean smolvm-exec smolvm-preflight smolvm-verify check-jactionlint check-bash check-commits check-dclint check-dockerfmt check-editorconfig check-gitleaks check-hadolint check-markdown check-mise check-shfmt check-zizmor format format-shfmt format-dockerfmt format-dclint hooks release
+.PHONY: help ci smolvm smolvm-pack smolvm-clean smolvm-exec smolvm-preflight smolvm-verify check-jactionlint check-bash check-commits check-dclint check-dockerfmt check-editorconfig check-gitleaks check-hadolint check-markdown check-mise check-node check-shfmt check-zizmor format format-node format-shfmt format-dockerfmt format-dclint hooks release
 
 help: ## Show this help.
 	@echo "Targets:"
@@ -58,6 +58,9 @@ check-markdown: ## Check every Markdown file with markdownlint-cli2.
 check-mise: ## Check the mise config file when mise is available.
 	scripts/check-mise.sh
 
+check-node: ## Check the Node and Vite starter when node and npm are available.
+	scripts/check-node.sh
+
 check-shfmt: ## Check the bash file format with shfmt.
 	scripts/check-shfmt.sh
 
@@ -66,6 +69,9 @@ check-zizmor: ## Check the GitHub Actions workflows with zizmor.
 
 format: ## Apply every formatter.
 	scripts/format.sh
+
+format-node: ## Format the Node and Vite code when node and npm are available.
+	scripts/format-node.sh
 
 format-shfmt: ## Format every bash file with shfmt.
 	scripts/format-shfmt.sh
