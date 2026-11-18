@@ -1,7 +1,7 @@
 SHELL := bash
 .DEFAULT_GOAL := help
 
-.PHONY: help ci smolvm smolvm-pack smolvm-clean smolvm-exec smolvm-preflight smolvm-verify check-jactionlint check-bash check-commits check-dclint check-dockerfmt check-editorconfig check-gitleaks check-hadolint check-markdown check-mise check-shfmt check-zizmor format format-shfmt format-dockerfmt format-dclint hooks release
+.PHONY: help ci smolvm smolvm-pack smolvm-clean smolvm-exec smolvm-preflight smolvm-verify check-jactionlint check-bash check-commits check-dclint check-dockerfmt check-editorconfig check-gitleaks check-hadolint check-markdown check-mise check-python check-python-audit check-shfmt check-zizmor format format-shfmt format-dockerfmt format-dclint format-python hooks release
 
 help: ## Show this help.
 	@echo "Targets:"
@@ -58,6 +58,12 @@ check-markdown: ## Check every Markdown file with markdownlint-cli2.
 check-mise: ## Check the mise config file when mise is available.
 	scripts/check-mise.sh
 
+check-python: ## Check the Python starter when uv is available.
+	scripts/check-python.sh
+
+check-python-audit: ## Audit the Python dependencies for known advisories.
+	scripts/check-python-audit.sh
+
 check-shfmt: ## Check the bash file format with shfmt.
 	scripts/check-shfmt.sh
 
@@ -75,6 +81,9 @@ format-dockerfmt: ## Format the Dockerfile and Containerfile files with dockerfm
 
 format-dclint: ## Fix the Docker Compose files with dclint.
 	scripts/format-dclint.sh
+
+format-python: ## Format the Python code when uv is available.
+	scripts/format-python.sh
 
 hooks: ## Install the git hooks in .githook.
 	git config core.hooksPath .githook
