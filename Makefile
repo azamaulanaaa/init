@@ -1,7 +1,7 @@
 SHELL := bash
 .DEFAULT_GOAL := help
 
-.PHONY: help ci smolvm smolvm-pack smolvm-clean smolvm-exec smolvm-preflight smolvm-verify check-jactionlint check-bash check-cargo check-clippy check-cargo-deny-advisories check-cargo-deny-bans check-cargo-deny-licenses check-cargo-deny-sources check-commits check-dclint check-dockerfmt check-editorconfig check-gitleaks check-hadolint check-markdown check-mise check-rustfmt check-shfmt check-zizmor format format-shfmt format-dockerfmt format-dclint hooks release
+.PHONY: help ci smolvm smolvm-pack smolvm-clean smolvm-exec smolvm-preflight smolvm-verify check-jactionlint check-bash check-cargo check-clippy check-cargo-deny-advisories check-cargo-deny-bans check-cargo-deny-licenses check-cargo-deny-sources check-commits check-dclint check-dockerfmt check-editorconfig check-gitleaks check-hadolint check-markdown check-mise check-rustfmt check-shfmt check-zizmor format format-rustfmt format-shfmt format-dockerfmt format-dclint hooks release
 
 help: ## Show this help.
 	@echo "Targets:"
@@ -87,6 +87,9 @@ check-zizmor: ## Check the GitHub Actions workflows with zizmor.
 
 format: ## Apply every formatter.
 	scripts/format.sh
+
+format-rustfmt: ## Format the Rust code when cargo is available.
+	scripts/format-rustfmt.sh
 
 format-shfmt: ## Format every bash file with shfmt.
 	scripts/format-shfmt.sh
