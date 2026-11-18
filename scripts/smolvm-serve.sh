@@ -11,6 +11,7 @@ SERVE_BASE=""
 SERVE_MACHINE_NAME=""
 SERVE_TARBALL=""
 SERVE_STAGE=""
+SERVE_STREAM_DIR=""
 SERVE_GUEST_RC=0
 SERVE_EXEC_TIMEOUT_SECS=0
 
@@ -128,6 +129,10 @@ serve_on_exit() {
   if [[ -n "$SERVE_STAGE" ]]; then
     rm -rf -- "$SERVE_STAGE"
     SERVE_STAGE=""
+  fi
+  if [[ -n "$SERVE_STREAM_DIR" ]]; then
+    rm -rf -- "$SERVE_STREAM_DIR"
+    SERVE_STREAM_DIR=""
   fi
   exit "$rc"
 }
@@ -277,6 +282,333 @@ serve_print_stream_lossy() {
   else
     printf '%s\n' "$decoded"
   fi
+}
+
+# Report whether a JSON object has the named field.
+serve_json_has_field() {
+  local body="$1"
+  local key="$2"
+  [[ "$body" == *"\"${key}\""* ]]
+}
+
+# Print one string field from a JSON object.
+# Decode the common JSON escapes before printing the value.
+# Print nothing when the field is absent or is not a string.
+serve_json_string_field() {
+  local body="$1"
+  local key="$2"
+  local marker="\"${key}\""
+  local text
+  text="${body#*"$marker"}"
+  if [[ "$text" == "$body" ]]; then
+    return 0
+  fi
+  text="${text#*:}"
+  text="${text#"${text%%[![:space:]]*}"}"
+  if [[ "$text" != \"* ]]; then
+    return 0
+  fi
+  text="${text#\"}"
+
+  local decoded=""
+  local char
+  local next
+  local index=0
+  local length=${#text}
+  while ((index < length)); do
+    char="${text:index:1}"
+    if [[ "$char" == '"' ]]; then
+      break
+    fi
+    if [[ "$char" == "\\" ]] && ((index + 1 < length)); then
+      next="${text:index+1:1}"
+      case "$next" in
+      n) decoded+=$'\n' ;;
+      r) decoded+=$'\r' ;;
+      t) decoded+=$'\t' ;;
+      '"') decoded+='"' ;;
+      "\\") decoded+="\\" ;;
+      *) decoded+="$char$next" ;;
+      esac
+      index=$((index + 2))
+      continue
+    fi
+    decoded+="$char"
+    index=$((index + 1))
+  done
+  printf '%s' "$decoded"
+}
+
+# Print one integer field from a JSON object.
+# Print nothing when the field is absent or is not a number.
+serve_json_number_field() {
+  local body="$1"
+  local key="$2"
+  local marker="\"${key}\""
+  local text
+  text="${body#*"$marker"}"
+  if [[ "$text" == "$body" ]]; then
+    return 0
+  fi
+  text="${text#*:}"
+  text="${text#"${text%%[![:space:]]*}"}"
+  if [[ "$text" =~ ^([0-9]+) ]]; then
+    printf '%s' "${BASH_REMATCH[1]}"
+  fi
+}
+
+# Print one base64 field as byte-exact output.
+# Send the bytes to the named stream: stdout or stderr.
+serve_emit_stream_b64() {
+  local encoded="$1"
+  local destination="$2"
+  local tmp
+  tmp="$(mktemp "${TMPDIR:-/tmp}/smolvm-sse.XXXXXX")" || return 1
+  if ! serve_decode_b64 "$encoded" "$tmp"; then
+    rm -f "$tmp"
+    echo "error: no base64 decoder is on PATH." >&2
+    echo "error: install base64 or openssl." >&2
+    return 1
+  fi
+  if [[ -s "$tmp" ]]; then
+    if [[ "$destination" == "stderr" ]]; then
+      cat "$tmp" >&2
+    else
+      cat "$tmp"
+    fi
+  fi
+  rm -f "$tmp"
+  return 0
+}
+
+# Warn once when a stream event carries only lossy text.
+serve_stream_warn_lossy() {
+  if ((SERVE_STREAM_WARNED == 0)); then
+    echo "warning: the exec stream has no base64 fields. Output is lossy UTF-8." >&2
+    SERVE_STREAM_WARNED=1
+  fi
+}
+
+# Print the named stream file when it exists.
+serve_stream_state() {
+  local path="$1"
+  if [[ -f "$path" ]]; then
+    head -n 1 "$path"
+  fi
+}
+
+# Handle one parsed SSE event.
+# Forward stdout events to stdout and stderr events to stderr.
+# Record the terminal event in the stream directory.
+serve_stream_handle_event() {
+  local event="$1"
+  local data="$2"
+  local stream_dir="$3"
+  local kind="$event"
+  local encoded=""
+  local text=""
+  local code=""
+  local message=""
+
+  if [[ "$data" == \{* ]]; then
+    if [[ -z "$kind" || "$kind" == "message" ]]; then
+      if serve_json_has_field "$data" exitCode; then
+        kind="exit"
+      elif serve_json_has_field "$data" message; then
+        kind="error"
+      elif serve_json_has_field "$data" stdoutB64 || serve_json_has_field "$data" stdout; then
+        kind="stdout"
+      elif serve_json_has_field "$data" stderrB64 || serve_json_has_field "$data" stderr; then
+        kind="stderr"
+      fi
+    fi
+  fi
+
+  case "$kind" in
+  stdout | stderr)
+    if [[ "$data" == \{* ]]; then
+      encoded="$(serve_json_string_field "$data" "${kind}B64")"
+      if [[ -n "$encoded" ]]; then
+        if serve_emit_stream_b64 "$encoded" "$kind"; then
+          printf '1\n' >"$stream_dir/emitted"
+        fi
+        return 0
+      fi
+      text="$(serve_json_string_field "$data" "$kind")"
+      if [[ -z "$text" ]]; then
+        text="$(serve_json_string_field "$data" chunk)"
+      fi
+      if [[ -z "$text" ]]; then
+        text="$(serve_json_string_field "$data" data)"
+      fi
+    else
+      text="$data"
+    fi
+    if [[ -n "$text" ]]; then
+      serve_stream_warn_lossy
+      if [[ "$kind" == "stderr" ]]; then
+        printf '%s' "$text" >&2
+      else
+        printf '%s' "$text"
+      fi
+      printf '1\n' >"$stream_dir/emitted"
+    fi
+    ;;
+  exit)
+    if [[ "$data" == \{* ]]; then
+      code="$(serve_json_number_field "$data" exitCode)"
+    elif [[ "$data" =~ ^[0-9]+$ ]]; then
+      code="$data"
+    fi
+    if [[ -n "$code" ]]; then
+      printf '%s\n' "$code" >"$stream_dir/exit"
+      printf 'exit\n' >"$stream_dir/terminal"
+    fi
+    ;;
+  error)
+    if [[ "$data" == \{* ]]; then
+      message="$(serve_json_string_field "$data" message)"
+    else
+      message="$data"
+    fi
+    if [[ -n "$message" ]]; then
+      echo "error: the exec stream reported: $message" >&2
+      printf '%s\n' "$message" >"$stream_dir/error"
+    fi
+    printf 'error\n' >"$stream_dir/terminal"
+    ;;
+  *)
+    # Ignore unknown events and keep-alive comments.
+    ;;
+  esac
+  return 0
+}
+
+# Parse an SSE response from stdin.
+# Forward output as each frame arrives. Write stream state to the directory.
+serve_parse_sse_stream() {
+  local stream_dir="$1"
+  local event=""
+  local data=""
+  local line=""
+  local value=""
+  SERVE_STREAM_WARNED=0
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    if [[ -z "$line" ]]; then
+      if [[ -n "$event" || -n "$data" ]]; then
+        serve_stream_handle_event "$event" "$data" "$stream_dir" || true
+        event=""
+        data=""
+      fi
+      continue
+    fi
+    case "$line" in
+    :*) continue ;;
+    event:*)
+      value="${line#event:}"
+      event="${value#"${value%%[![:space:]]*}"}"
+      ;;
+    data:*)
+      value="${line#data:}"
+      value="${value# }"
+      if [[ -n "$data" ]]; then
+        data+=$'\n'
+      fi
+      data+="$value"
+      ;;
+    *) continue ;;
+    esac
+  done
+
+  if [[ -n "$event" || -n "$data" ]]; then
+    serve_stream_handle_event "$event" "$data" "$stream_dir" || true
+  fi
+  if [[ ! -f "$stream_dir/terminal" ]]; then
+    printf 'eof\n' >"$stream_dir/terminal"
+  fi
+}
+
+# Run one command through the streaming exec endpoint.
+# Forward guest output as the SSE events arrive.
+# Set SERVE_GUEST_RC from the exit event.
+# Return 2 when the buffered path should run. Return 1 on a stream failure.
+serve_stream_exec() {
+  local worker="$1"
+  local body="$2"
+  local stream_dir
+  local curl_error
+  local curl_rc=0
+  local parser_rc=0
+  local guest_rc=""
+  local terminal=""
+  local emitted=0
+
+  stream_dir="$(mktemp -d "${TMPDIR:-/tmp}/smolvm-sse.XXXXXX")" || return 1
+  SERVE_STREAM_DIR="$stream_dir"
+  curl_error="${stream_dir}/curl.err"
+
+  local -a options=(
+    --fail
+    --silent
+    --show-error
+    --no-buffer
+    --connect-timeout 5
+    --max-time "${SMOLVM_SERVE_TIMEOUT:-120}"
+    -X POST
+    -H 'content-type: application/json'
+    -d "$body"
+  )
+  if [[ -n "${SMOLVM_SERVE_TOKEN:-}" ]]; then
+    options+=(-H "Authorization: Bearer ${SMOLVM_SERVE_TOKEN}")
+  fi
+
+  local -a pipe_status=()
+  if curl "${SERVE_CURL_CONNECT[@]}" "${options[@]}" \
+    "${SERVE_BASE}/api/v1/machines/${worker}/exec/stream" \
+    2>"$curl_error" | serve_parse_sse_stream "$stream_dir"; then
+    pipe_status=("${PIPESTATUS[@]}")
+  else
+    pipe_status=("${PIPESTATUS[@]}")
+  fi
+  curl_rc="${pipe_status[0]}"
+  parser_rc="${pipe_status[1]:-0}"
+
+  guest_rc="$(serve_stream_state "${stream_dir}/exit")"
+  terminal="$(serve_stream_state "${stream_dir}/terminal")"
+  if [[ -f "${stream_dir}/emitted" ]]; then
+    emitted=1
+  fi
+
+  if [[ -n "$guest_rc" ]]; then
+    if ((curl_rc != 0 || parser_rc != 0)); then
+      echo "warning: the exec stream ended with a transport error." >&2
+    fi
+    SERVE_GUEST_RC="$guest_rc"
+    rm -rf -- "$stream_dir"
+    SERVE_STREAM_DIR=""
+    return 0
+  fi
+
+  if ((emitted == 0)); then
+    echo "warning: the exec stream gave no exit code. Using the buffered exec path." >&2
+    rm -rf -- "$stream_dir"
+    SERVE_STREAM_DIR=""
+    return 2
+  fi
+
+  echo "error: the exec stream ended before the guest command exited." >&2
+  if [[ "$terminal" == "error" ]]; then
+    local message
+    message="$(serve_stream_state "${stream_dir}/error")"
+    if [[ -n "$message" ]]; then
+      echo "error: ${message}" >&2
+    fi
+  fi
+  rm -rf -- "$stream_dir"
+  SERVE_STREAM_DIR=""
+  return 1
 }
 
 # Run one command in a machine on the remote server.
@@ -430,19 +762,29 @@ serve_run_remote() {
   fi
 
   local escaped
+  local exec_body
+  local guest_rc=""
+  local stream_rc=0
   escaped="$(json_escape "$guest_command")"
-  if ! response="$(serve_request POST "/api/v1/machines/${worker}/exec" \
-    -H 'content-type: application/json' \
-    -d "{\"command\":[\"bash\",\"-lc\",\"${escaped}\"],\"timeoutSecs\":${SERVE_EXEC_TIMEOUT_SECS}}" 2>&1)"; then
-    echo "error: the remote smolvm API call failed: run command." >&2
-    return 1
+  exec_body="{\"command\":[\"bash\",\"-lc\",\"${escaped}\"],\"timeoutSecs\":${SERVE_EXEC_TIMEOUT_SECS}}"
+
+  if serve_stream_exec "$worker" "$exec_body"; then
+    guest_rc="$SERVE_GUEST_RC"
+  else
+    stream_rc=$?
+    if ((stream_rc != 2)); then
+      return 1
+    fi
+    if ! response="$(serve_request POST "/api/v1/machines/${worker}/exec" \
+      -H 'content-type: application/json' \
+      -d "$exec_body" 2>&1)"; then
+      echo "error: the remote smolvm API call failed: run command." >&2
+      return 1
+    fi
+    serve_print_stream "$response" stdout
+    serve_print_stream "$response" stderr
+    guest_rc="$(serve_exec_rc "$response")"
   fi
-
-  serve_print_stream "$response" stdout
-  serve_print_stream "$response" stderr
-
-  local guest_rc
-  guest_rc="$(serve_exec_rc "$response")"
   if [[ -z "$guest_rc" ]]; then
     echo "error: the remote exec response has no exitCode." >&2
     return 1
