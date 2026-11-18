@@ -63,6 +63,12 @@ jobs:
           - name: zizmor
             install_args: zizmor
             script: scripts/check-zizmor.sh
+          - name: python
+            install_args: "python uv"
+            script: scripts/check-python.sh
+          - name: python-audit
+            install_args: "python uv"
+            script: scripts/check-python-audit.sh
     steps:
       - name: Check out the repository
         if: matrix.name != 'commits'
