@@ -20,6 +20,16 @@ start the check pipeline. The `pre-commit` and `pre-push` hooks run
 `scripts/ci.sh` directly. `make ci` runs the same script and does not
 call `mise`.
 
+The Python runtime and `uv` come from
+[`mise.toml`](../mise.toml). `pyproject.toml` declares `pytest`, `ruff`,
+and `mypy` as development tools. `uv` reads that file and installs the
+tools in the check environment. Do not install tools on the host.
+
+`pip-audit` checks the Python dependencies for known advisories. The
+advisories script fetches `pip-audit` at check time. It is not a declared
+dependency. `pip-audit` needs network access to fetch the vulnerability
+database. The remote smolvm path has network access.
+
 `scripts/ci.sh` can hand the run to the smolvm microVM. After the
 `git` preflight it reads `SMOLVM_ENABLED`. The value `0` forces the
 host path. The script prints no warning. The value `1` enforces smolvm.
@@ -129,8 +139,8 @@ propagates to the host.
 
 You need `git` and `make`. The checks need `cog`, `dclint`,
 `dockerfmt`, `editorconfig-checker`, `gitleaks`, `hadolint`, `jactionlint`,
-`markdownlint-cli2`, `shellcheck`, `shfmt`, and `zizmor` on `PATH`. `mise` is
-optional. Run `make help` to list the available targets.
+`markdownlint-cli2`, `python`, `shellcheck`, `shfmt`, `uv`, and `zizmor` on
+`PATH`. `mise` is optional. Run `make help` to list the available targets.
 
 `make ci` runs the checks inside a smolvm microVM when `smolvm` is on
 `PATH` and the host accelerator is available (`/dev/kvm` on Linux,
@@ -179,6 +189,8 @@ make check-gitleaks
 make check-hadolint
 make check-markdown
 make check-mise
+make check-python
+make check-python-audit
 make check-shfmt
 make check-zizmor
 ```
@@ -189,6 +201,7 @@ These targets call `scripts/check-jactionlint.sh`,
 `scripts/check-editorconfig.sh`, `scripts/check-gitleaks.sh`,
 `scripts/check-hadolint.sh`,
 `scripts/check-markdown.sh`, `scripts/check-mise.sh`,
+`scripts/check-python.sh`, `scripts/check-python-audit.sh`,
 `scripts/check-shfmt.sh`, and `scripts/check-zizmor.sh`.
 
 Run this command from the repository root:
@@ -203,6 +216,20 @@ set of checked-out files in the repository.
 
 `scripts/check-mise.sh` prints a skip message and exits 0 when `mise` is
 absent. The script skips the check on purpose.
+
+`scripts/check-python.sh` runs `uv run ruff check .` and
+`uv run ruff format --check .`. It then runs `uv run mypy src tests` for
+static type checks and `uv run pytest` for the test suite. The script
+prints a skip message and exits 0 when `uv` or `pyproject.toml` is
+absent.
+
+`scripts/check-python-audit.sh` runs `uv run --with pip-audit pip-audit`.
+`uv` puts the dependencies from `pyproject.toml`, including the dev
+group, in that environment. `pip-audit` scans those installed packages.
+The tool is fetched at check time and is not a declared dependency.
+`pip-audit` needs network access to fetch the vulnerability database.
+The remote smolvm path has network access. The script prints a skip
+message and exits 0 when `uv` or `pyproject.toml` is absent.
 
 ### Format the files
 
@@ -220,7 +247,8 @@ prints `run: <script>` before each script. It stops when a formatter
 fails. It prints `all formatting applied (N scripts)` after the last
 script. When no format script exists, it prints `no format scripts` and
 exits 0. The run includes `scripts/format-shfmt.sh`,
-`scripts/format-dockerfmt.sh`, and `scripts/format-dclint.sh`.
+`scripts/format-dockerfmt.sh`, `scripts/format-dclint.sh`, and
+`scripts/format-python.sh`.
 
 Run these commands to apply one formatter at a time:
 
@@ -228,6 +256,7 @@ Run these commands to apply one formatter at a time:
 make format-shfmt
 make format-dockerfmt
 make format-dclint
+make format-python
 ```
 
 `scripts/format-shfmt.sh` runs `shfmt -i 2 -w` on the bash files. The
@@ -242,6 +271,10 @@ write.
 `scripts/format-dclint.sh` runs `dclint --fix` on the Docker Compose
 files. The check script `scripts/check-dclint.sh` runs `dclint` on the same
 files. The check script does not write.
+
+`scripts/format-python.sh` runs `uv run ruff check --fix .` and
+`uv run ruff format .`. The check script `scripts/check-python.sh` runs
+`ruff` in read-only mode. The check script does not write.
 
 The workflow runs the check scripts only. Commit the changed files after
 `make format`.
@@ -290,6 +323,11 @@ The workflow runs the check scripts only. Commit the changed files after
     dependency. Run `mise use <tool>@<major>`. Do not use `latest`. Do
     not use an exact pin unless you have a reason. A major constraint
     permits bug and security fixes.
+
+    Python project tools are the exception. Add them to the `dev` group
+    in [`pyproject.toml`](../pyproject.toml). `uv` installs them at check
+    time. Add the Python runtime and `uv` to
+    [`mise.toml`](../mise.toml).
 
     Some tools use a backend prefix in the `mise` key. The key can differ
     from the command name. Run this command to write
@@ -372,14 +410,16 @@ target.
 the check pipeline. No check script requires `mise`. The scripts use
 tools from `PATH`.
 
-Keep one tool version list in [`mise.toml`](../mise.toml). A second list
-can drift and produce different results.
+Keep runtimes and tool executables in
+[`mise.toml`](../mise.toml). Keep project packages in
+[`pyproject.toml`](../pyproject.toml) or `package.json`. `uv` and `npm`
+install those packages at check time.
 
 ## GitHub Actions
 
 The workflow [`ci.yml`](../.github/workflows/ci.yml) runs the checks on
 GitHub Actions. It runs on each pull request and each push to `main`.
-The workflow has one matrix job with ten entries plus four extra jobs.
+The workflow has one matrix job with twelve entries plus four extra jobs.
 
 Each check job uses the `jdxcode/mise` image on the `ubuntu-24.04` runner.
 The image provides `mise`, `git`, `curl`, and CA certificates. It provides
@@ -390,15 +430,17 @@ Pin each image by digest and each action by commit SHA. Add a comment
 that names the version of the pin. A fixed version gives the same result
 on each run.
 
-One matrix job runs the ten check scripts. Each matrix entry sets the
+One matrix job runs the twelve check scripts. Each matrix entry sets the
 tool that its check needs. The matrix entry for `mise` installs no tool.
+The `python` and `python-audit` entries install `python` and `uv` with
+`mise`.
 
 The workflow has no release job. The release stays local. The
 [release workflow](release.md) describes the release steps.
 
 ### Required status checks
 
-The fourteen job names are the status check names:
+The sixteen job names are the status check names:
 
 - `mise`
 - `jactionlint`
@@ -410,6 +452,8 @@ The fourteen job names are the status check names:
 - `dockerfmt`
 - `dclint`
 - `zizmor`
+- `python`
+- `python-audit`
 - `PR title`
 - `gitleaks`
 - `editorconfig`
@@ -417,7 +461,7 @@ The fourteen job names are the status check names:
 
 `PR title` and `dependency-review` run only on pull requests.
 
-Set these fourteen names as required status checks on the default branch.
+Set these sixteen names as required status checks on the default branch.
 Configure branch protection or rulesets on GitHub. Set them in the
 repository settings. Do not set them in the repository files.
 
@@ -435,6 +479,9 @@ A check script follows these rules:
 - Write short output. Print a result line. Print the tool output when a
   check fails.
 - Exit non-zero when a check fails.
+
+The Python advisories check is the network exception. It fetches the
+vulnerability database for `pip-audit`.
 
 ## Compatibility and limits
 

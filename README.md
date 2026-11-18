@@ -5,6 +5,22 @@
 The sections below show how to install the hooks, run the checks,
 commit, and release a version.
 
+## Python starter
+
+This repository includes a minimal Python starter. It holds one module
+and one test. `mise.toml` declares the Python runtime and `uv`.
+`pyproject.toml` declares `pytest`, `ruff`, and `mypy` as development
+tools. `uv` reads that file and installs the tools in the check
+environment. `pip-audit` is fetched at check time. Do not install tools
+on the host.
+
+`make check-python` runs `ruff`, `mypy`, and `pytest` through `uv`.
+`make check-python-audit` runs `pip-audit` on the dependencies in
+`pyproject.toml`. `pip-audit` needs network access to fetch the
+vulnerability database. The remote smolvm path has network access.
+`make format-python` applies `ruff` fixes and the `ruff` formatter.
+These scripts skip the run when `uv` or `pyproject.toml` is absent.
+
 ## Customize this template
 
 Replace these values before you use this template:
@@ -22,7 +38,7 @@ You need `git` and `make`.
 
 The checks need these tools on `PATH`: `cog`, `dclint`, `dockerfmt`,
 `editorconfig-checker`, `gitleaks`, `hadolint`, `jactionlint`,
-`markdownlint-cli2`, `shellcheck`, `shfmt`, and `zizmor`.
+`markdownlint-cli2`, `python`, `shellcheck`, `shfmt`, `uv`, and `zizmor`.
 
 If you use [`mise`](https://mise.jdx.dev/), run `mise install`. Then
 activate `mise` in your shell so the tools are on `PATH`.
@@ -69,12 +85,23 @@ make check-gitleaks
 make check-hadolint
 make check-markdown
 make check-mise
+make check-python
+make check-python-audit
 make check-shfmt
 make check-zizmor
 ```
 
 `make check-mise` prints a skip message and exits 0 when `mise` is
-absent. `make help` lists every target.
+absent. `make check-python` prints a skip message and exits 0 when
+`uv` or `pyproject.toml` is absent. The check script runs
+`uv run ruff check .`, `uv run ruff format --check .`,
+`uv run mypy src tests`, and `uv run pytest`.
+`make check-python-audit` runs `uv run --with pip-audit pip-audit`. The
+command audits the dependencies that `pyproject.toml` declares, including
+the dev group. The check prints a skip message and exits 0 when `uv` or
+`pyproject.toml` is absent. `pip-audit` needs network access to fetch the
+vulnerability database. The remote smolvm path has network access.
+`make help` lists every target.
 
 The checks do not change files. They report a problem and exit non-zero.
 
@@ -150,12 +177,15 @@ Run these commands to apply one formatter at a time:
 make format-shfmt
 make format-dockerfmt
 make format-dclint
+make format-python
 ```
 
 `make format-shfmt` formats the bash files with `shfmt`.
 `make format-dclint` fixes the Docker Compose files with `dclint`.
 `make format-dockerfmt` formats the Dockerfile and Containerfile files
-with `dockerfmt`. Commit the changed files after `make format`.
+with `dockerfmt`. `make format-python` runs `uv run ruff check --fix .`
+and `uv run ruff format .` on the Python code. Commit the changed files
+after `make format`.
 
 GitHub Actions runs the same checks on pull requests and pushes to
 `main`. The workflow is `.github/workflows/ci.yml`. The
