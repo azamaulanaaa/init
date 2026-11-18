@@ -8,3 +8,10 @@
 
 # smolvm runtime state. Created by any smolvm CLI call from this directory.
 .smolvm/
+
+# Ignore Python generated files.
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.pyc
