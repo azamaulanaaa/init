@@ -174,6 +174,7 @@ fails.
 Run these commands to apply one formatter at a time:
 
 ```bash
+make format-rustfmt
 make format-shfmt
 make format-dockerfmt
 make format-dclint
