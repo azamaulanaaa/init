@@ -1605,7 +1605,8 @@ serve_run_remote() {
   stage="$(mktemp -d "${TMPDIR:-/tmp}/smolvm-stage.XXXXXX")" || return 1
   SERVE_STAGE="$stage"
 
-  # Copy the working tree without the cache. Build a portable .git below.
+  # Copy the working tree without the cache or generated Node directories.
+  # Build a portable .git below.
   # The temp directory can be visible inside the repository. On this host
   # /tmp maps to the repository's .tmp directory. Without the excludes the
   # first tar would read the staging directory while the second tar writes
@@ -1615,6 +1616,7 @@ serve_run_remote() {
   tarball_name="${tarball##*/}"
   if ! tar -C "$repo_root" \
     --exclude=.git --exclude=.cache \
+    --exclude=node_modules --exclude=dist --exclude=coverage \
     --exclude="*/$stage_name" --exclude="*/$tarball_name" \
     -cf - . |
     tar -C "$stage" -xf -; then
