@@ -255,12 +255,16 @@ source it. One run follows these steps:
 1. Check that `curl` and `tar` are on PATH.
 2. Resolve the server address into a base URL and curl options.
 3. Copy the live working tree to a staging directory. Exclude `.git`
-    and `.cache`. Build a portable `.git` in the staging directory. The
-    client resolves a worktree pointer to the real git dirs first. It
-    copies the common git data and overlays the per-worktree files. It
-    removes the pointer files and the worktree list. It checks the
-    staged git data before any API call. It archives the staging
-    directory. No data comes from the local pack cache.
+    and `.cache`. Exclude the staging directory and the archive too.
+    A temp directory can appear inside the repository. On some hosts
+    `/tmp` maps to the repository's `.tmp` directory. The source copy
+    must not read the staging directory while the copy writes it.
+    That loop never ends. Build a portable `.git` in the staging
+    directory. Resolve a worktree pointer to the real git dirs first.
+    Copy the common git data and overlay the per-worktree files. Remove
+    the pointer files and the worktree list. Check the staged git data
+    before any API call. Archive the staging directory. No data comes
+    from the local pack cache.
 4. Call `GET /health` to check that the server answers.
 5. Call `POST /api/v1/machines` with `image` and `network: true` to
     create a machine.

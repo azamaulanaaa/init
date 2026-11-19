@@ -652,7 +652,17 @@ serve_run_remote() {
   SERVE_STAGE="$stage"
 
   # Copy the working tree without the cache. Build a portable .git below.
-  if ! tar -C "$repo_root" --exclude=.git --exclude=.cache -cf - . |
+  # The temp directory can be visible inside the repository. On this host
+  # /tmp maps to the repository's .tmp directory. Without the excludes the
+  # first tar would read the staging directory while the second tar writes
+  # it. That loop never ends. Exclude both by their unique base names.
+  local stage_name tarball_name
+  stage_name="${stage##*/}"
+  tarball_name="${tarball##*/}"
+  if ! tar -C "$repo_root" \
+    --exclude=.git --exclude=.cache \
+    --exclude="*/$stage_name" --exclude="*/$tarball_name" \
+    -cf - . |
     tar -C "$stage" -xf -; then
     echo "error: the working tree was not staged." >&2
     return 1
