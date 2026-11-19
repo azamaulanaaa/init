@@ -4,6 +4,8 @@
 # Do not run this file as a command. The helper uses curl only.
 # The helper never prints the value of SMOLVM_SERVE_TOKEN.
 # CPU and memory come from SMOLVM_CPUS and SMOLVM_MEMORY_MB.
+# A server with exec session endpoints runs every exec in a resumable
+# session. A server without them uses the stream and buffered paths.
 
 # Globals set by serve_init and serve_run_remote.
 SERVE_CURL_CONNECT=()
@@ -111,6 +113,107 @@ serve_request() {
 
   local url="${SERVE_BASE}${path}"
   curl "${SERVE_CURL_CONNECT[@]}" "${options[@]}" "$@" "$url"
+}
+
+# Send one request and record the answer.
+# Print the HTTP status code on stdout. Write the body to the named file.
+# Return the curl exit code. The call records an HTTP error status. It does
+# not fail on one. A transport failure prints status 000.
+serve_request_capture() {
+  local method="$1"
+  local path="$2"
+  local body_file="$3"
+  shift 3
+
+  local -a options=(
+    --silent
+    --show-error
+    --connect-timeout 5
+    --max-time "${SMOLVM_SERVE_TIMEOUT:-120}"
+    -X "$method"
+    -o "$body_file"
+    -w '%{http_code}'
+  )
+  if [[ -n "${SMOLVM_SERVE_TOKEN:-}" ]]; then
+    options+=(-H "Authorization: Bearer ${SMOLVM_SERVE_TOKEN}")
+  fi
+
+  local url="${SERVE_BASE}${path}"
+  curl "${SERVE_CURL_CONNECT[@]}" "${options[@]}" "$@" "$url"
+}
+
+# Report one failed serve call.
+# Print the step, the HTTP status, and the message from the error body.
+# Print transport advice when the server did not answer.
+serve_api_error() {
+  local step="$1"
+  local status="$2"
+  local body="$3"
+
+  echo "error: the remote smolvm API call failed: ${step}." >&2
+  if [[ "$status" =~ ^[1-5][0-9][0-9]$ ]]; then
+    echo "error: the server answered HTTP ${status}." >&2
+  else
+    echo "error: the server did not answer. Check SMOLVM_SERVE_ADDR and the network." >&2
+  fi
+  local message
+  message="$(serve_json_string_field "$body" error)"
+  if [[ -n "$message" ]]; then
+    echo "error: the server reported: ${message}" >&2
+  fi
+}
+
+# Send one request that must answer with a 2xx status.
+# Print the body on stdout on success.
+# Print the failure lines and return 1 on any other answer.
+serve_request_ok() {
+  local step="$1"
+  local method="$2"
+  local path="$3"
+  shift 3
+
+  local body_file
+  body_file="$(mktemp "${TMPDIR:-/tmp}/smolvm-api.XXXXXX")" || return 1
+  local status=""
+  local rc=0
+  status="$(serve_request_capture "$method" "$path" "$body_file" "$@")" || rc=$?
+  local body=""
+  if [[ -f "$body_file" ]]; then
+    body="$(cat "$body_file" 2>/dev/null || true)"
+  fi
+  rm -f "$body_file"
+  if ((rc == 0)) && [[ "$status" =~ ^2[0-9][0-9]$ ]]; then
+    printf '%s' "$body"
+    return 0
+  fi
+  serve_api_error "$step" "$status" "$body"
+  return 1
+}
+
+# Check the archive size before the upload.
+# The serve upload endpoint accepts at most 1 GiB. Stop before the call
+# when the archive is larger. The 413 handling stays for a server that
+# answers the call anyway.
+serve_upload_precheck() {
+  local archive="$1"
+  local limit=1073741824
+  local size=""
+  size="$(wc -c <"$archive" 2>/dev/null)" || {
+    echo "error: the archive size was not measured." >&2
+    return 1
+  }
+  size="${size//[[:space:]]/}"
+  if [[ ! "$size" =~ ^[0-9]+$ ]]; then
+    echo "error: the archive size was not measured." >&2
+    return 1
+  fi
+  if ((size > limit)); then
+    echo "error: the worktree archive is ${size} bytes." >&2
+    echo "error: the serve upload limit is ${limit} bytes (1 GiB)." >&2
+    echo "error: Make the working tree smaller and run again." >&2
+    return 1
+  fi
+  return 0
 }
 
 # Clean up the machine, the archive, and the staging directory on exit.
@@ -626,6 +729,9 @@ serve_run_remote() {
   if ! serve_init; then
     return 1
   fi
+  if ! serve_run_timeout_resolve; then
+    return 1
+  fi
 
   echo "warning: remote mode does not use the local pack cache." >&2
   echo "warning: the init script installs the tools on every run." >&2
@@ -699,8 +805,12 @@ serve_run_remote() {
   rm -rf -- "$stage"
   SERVE_STAGE=""
 
-  if ! serve_request GET /health >/dev/null 2>&1; then
-    echo "error: the remote smolvm server is unreachable." >&2
+  # The serve upload endpoint accepts at most 1 GiB. Stop before the call.
+  if ! serve_upload_precheck "$tarball"; then
+    return 1
+  fi
+
+  if ! serve_request_ok "check health" GET /health >/dev/null; then
     return 1
   fi
 
@@ -710,25 +820,23 @@ serve_run_remote() {
       "$(json_escape "$worker")" "$(json_escape "$image")" \
       "$SMOLVM_CPUS_VALUE" "$SMOLVM_MEMORY_MB_VALUE"
   )"
-  if ! serve_request POST /api/v1/machines \
+  if ! serve_request_ok "create machine" POST /api/v1/machines \
     -H 'content-type: application/json' \
-    -d "$create_body" >/dev/null 2>&1; then
-    echo "error: the remote smolvm API call failed: create machine." >&2
+    -d "$create_body" >/dev/null; then
     return 1
   fi
 
-  if ! serve_request POST "/api/v1/machines/${worker}/start" \
+  if ! serve_request_ok "start machine" POST "/api/v1/machines/${worker}/start" \
     -H 'content-type: application/json' \
-    -d '{}' >/dev/null 2>&1; then
-    echo "error: the remote smolvm API call failed: start machine." >&2
+    -d '{}' >/dev/null; then
     return 1
   fi
 
-  local response
-  if ! response="$(serve_request POST "/api/v1/machines/${worker}/exec" \
+  local response=""
+  if ! response="$(serve_request_ok "readiness check" POST \
+    "/api/v1/machines/${worker}/exec" \
     -H 'content-type: application/json' \
-    -d '{"command":["bash","-lc","echo SMOLVM_READY"],"timeoutSecs":'"$SERVE_EXEC_TIMEOUT_SECS"'}' 2>&1)"; then
-    echo "error: the remote smolvm API call failed: readiness check." >&2
+    -d '{"command":["bash","-lc","echo SMOLVM_READY"],"timeoutSecs":'"$SERVE_EXEC_TIMEOUT_SECS"'}')"; then
     return 1
   fi
   if [[ "$response" != *SMOLVM_READY* ]]; then
@@ -736,17 +844,25 @@ serve_run_remote() {
     return 1
   fi
 
-  if ! serve_request PUT "/api/v1/machines/${worker}/files/%2Froot%2Fsmolvm-worktree.tar.gz" \
+  if ! serve_request_ok "upload working tree" PUT \
+    "/api/v1/machines/${worker}/files/%2Froot%2Fsmolvm-worktree.tar.gz" \
     -H 'content-type: application/octet-stream' \
-    --data-binary "@${tarball}" >/dev/null 2>&1; then
-    echo "error: the remote smolvm API call failed: upload working tree." >&2
+    --data-binary "@${tarball}" >/dev/null; then
     return 1
   fi
 
-  if ! response="$(serve_request POST "/api/v1/machines/${worker}/exec" \
+  local escaped
+  local exec_body
+  local guest_rc=""
+  local stream_rc=0
+  local init_started=0
+  local init_ended=0
+
+  local response=""
+  if ! response="$(serve_request_ok "extract working tree" POST \
+    "/api/v1/machines/${worker}/exec" \
     -H 'content-type: application/json' \
-    -d '{"command":["bash","-lc","mkdir -p /workspace && tar -xzf /root/smolvm-worktree.tar.gz -C /workspace"],"timeoutSecs":'"$SERVE_EXEC_TIMEOUT_SECS"'}' 2>&1)"; then
-    echo "error: the remote smolvm API call failed: extract working tree." >&2
+    -d '{"command":["bash","-lc","mkdir -p /workspace && tar -xzf /root/smolvm-worktree.tar.gz -C /workspace"],"timeoutSecs":'"$SERVE_EXEC_TIMEOUT_SECS"'}')"; then
     return 1
   fi
   local setup_rc
@@ -756,12 +872,15 @@ serve_run_remote() {
     return 1
   fi
 
-  if ! response="$(serve_request POST "/api/v1/machines/${worker}/exec" \
+  init_started="$(date +%s)"
+  if ! response="$(serve_request_ok "provision machine" POST \
+    "/api/v1/machines/${worker}/exec" \
     -H 'content-type: application/json' \
-    -d '{"command":["bash","-lc","bash /workspace/smol/init.sh"],"timeoutSecs":'"$SERVE_EXEC_TIMEOUT_SECS"'}' 2>&1)"; then
-    echo "error: the remote smolvm API call failed: provision machine." >&2
+    -d '{"command":["bash","-lc","bash /workspace/smol/init.sh"],"timeoutSecs":'"$SERVE_EXEC_TIMEOUT_SECS"'}')"; then
     return 1
   fi
+  init_ended="$(date +%s)"
+  echo "note: the remote init ran in $((init_ended - init_started)) seconds." >&2
   serve_print_stream "$response" stdout
   serve_print_stream "$response" stderr
   local init_rc
@@ -771,10 +890,6 @@ serve_run_remote() {
     return 1
   fi
 
-  local escaped
-  local exec_body
-  local guest_rc=""
-  local stream_rc=0
   escaped="$(json_escape "$guest_command")"
   exec_body="{\"command\":[\"bash\",\"-lc\",\"${escaped}\"],\"timeoutSecs\":${SERVE_EXEC_TIMEOUT_SECS}}"
 
@@ -785,10 +900,10 @@ serve_run_remote() {
     if ((stream_rc != 2)); then
       return 1
     fi
-    if ! response="$(serve_request POST "/api/v1/machines/${worker}/exec" \
+    if ! response="$(serve_request_ok "run command" POST \
+      "/api/v1/machines/${worker}/exec" \
       -H 'content-type: application/json' \
-      -d "$exec_body" 2>&1)"; then
-      echo "error: the remote smolvm API call failed: run command." >&2
+      -d "$exec_body")"; then
       return 1
     fi
     serve_print_stream "$response" stdout
