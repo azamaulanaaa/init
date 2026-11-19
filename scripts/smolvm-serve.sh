@@ -253,6 +253,45 @@ serve_upload_precheck() {
   return 0
 }
 
+# Build the allowedHosts field for the create body.
+# The value comes from SMOLVM_SERVE_ALLOW_HOSTS: a comma-separated list
+# of hostnames. The default is unset. An unset value keeps the create
+# body unchanged. A set value adds the field to the create body.
+# Print "," plus the field on stdout. Print nothing when unset.
+# Stop with an error when one entry is empty after the trim.
+serve_allow_hosts_field() {
+  local value="${SMOLVM_SERVE_ALLOW_HOSTS:-}"
+  local entry
+  local trimmed
+  local index
+  local field=',"allowedHosts":['
+  local -a hosts=()
+
+  if [[ -z "$value" ]]; then
+    return 0
+  fi
+
+  while IFS= read -r entry; do
+    trimmed="${entry#"${entry%%[![:space:]]*}"}"
+    trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+    if [[ -z "$trimmed" ]]; then
+      echo "error: SMOLVM_SERVE_ALLOW_HOSTS has an empty entry." >&2
+      echo "error: Give a comma-separated list of hostnames." >&2
+      return 1
+    fi
+    hosts+=("$(json_escape "$trimmed")")
+  done < <(tr ',' '\n' <<<"$value")
+
+  for index in "${!hosts[@]}"; do
+    if ((index > 0)); then
+      field+=','
+    fi
+    field+="\"${hosts[$index]}\""
+  done
+  field+=']'
+  printf '%s' "$field"
+}
+
 # Clean up the machine, the archive, and the staging directory on exit.
 # Keep the exit code that the caller produced.
 serve_on_exit() {
@@ -1300,6 +1339,10 @@ serve_run_remote() {
   if ! serve_run_timeout_resolve; then
     return 1
   fi
+  local allow_field=""
+  if ! allow_field="$(serve_allow_hosts_field)"; then
+    return 1
+  fi
 
   echo "warning: remote mode does not use the local pack cache." >&2
   echo "warning: the init script installs the tools on every run." >&2
@@ -1390,9 +1433,9 @@ serve_run_remote() {
 
   local create_body
   create_body="$(
-    printf '{"name":"%s","image":"%s","cpus":%s,"memoryMb":%s,"network":true,"cmd":["sh","-c","while true; do sleep 3600; done"]}' \
+    printf '{"name":"%s","image":"%s","cpus":%s,"memoryMb":%s,"network":true%s,"cmd":["sh","-c","while true; do sleep 3600; done"]}' \
       "$(json_escape "$worker")" "$(json_escape "$image")" \
-      "$SMOLVM_CPUS_VALUE" "$SMOLVM_MEMORY_MB_VALUE"
+      "$SMOLVM_CPUS_VALUE" "$SMOLVM_MEMORY_MB_VALUE" "$allow_field"
   )"
   if ! serve_request_ok "create machine" POST /api/v1/machines \
     -H 'content-type: application/json' \
