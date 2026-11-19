@@ -64,6 +64,93 @@ Verified on 2026-11-16 on Linux x86_64 with KVM and smolvm 1.35.1:
 - The host is capable of running the microVM. The guest `apt-get`
   step is noninteractive.
 
+Verified live on 2026-11-19 with `smolvm serve` v1.35.4 at
+`http://127.0.0.1:5000`:
+
+- The session probe `GET /api/v1/machines/:name/execs` returned 200
+  with `{"execs":[]}`. The run used session mode.
+- `POST /api/v1/machines/:name/execs` with an `execId`,
+  `command`, and `waitSecs` returned 201. The answer carried
+  `output` chunks with base64 `data`, `next`, `done`, and `exitCode`.
+  A short command finished in the one start request.
+- A start that repeated the same `execId` returned 200 with the first
+  answer and the first `createdAt`. The command did not run twice.
+- `DELETE /api/v1/machines/:name/execs/:exec` returned 204.
+- `make smolvm-exec ARGS='echo LIVE-SESSION-OK; exit 7'` ran the full
+  remote flow. The init installed apt packages and 13 mise tools. The
+  guest output streamed through the session reads. The script exited
+  with the guest exit code 7. The machine list was empty after the
+  run. The init took 91 seconds on one run and 171 seconds on another.
+- A piped local file ran `make smolvm-exec ARGS='sha256sum -'` through
+  the numbered stdin frames. The guest hash matched the local hash.
+  The input carried one non-UTF-8 byte.
+- `SMOLVM_SERVE_SYNC_DIR` uploaded a local directory. A relative link
+  inside it stayed a link in the guest. An absolute link became a real
+  file with the target content.
+- The server ran without `--cache-disk-dir` for these runs. Every
+  cache-base call answered 400 with `cache disks are disabled on this
+  server; start \`smolvm serve\` with --cache-disk-dir to enable them`.
+  The client printed the refused-cache warning and completed each run
+  with full provisioning.
+
+Verified live on 2026-11-19 after the server restarted with
+`--cache-disk-dir`:
+
+- The create body carried `cacheDisk` with the base
+  `smolvm-ci-<sha256-of-the-repository-state>.qcow2` and `mountPath`
+  `/cache`. The server refused the create because the base file does
+  not exist. The answer was HTTP 400 with `cannot stat cache base (The
+  system cannot find the file specified. (os error 2))`.
+- The client printed the reason verbatim in the refused-cache warning,
+  retried the create without the field, and completed the run with full
+  provisioning. The init took 82 seconds. The guest command
+  `echo LIVE-MISSING-BASE-OK; exit 3` streamed its output and the
+  script exited with the guest exit code 3. The machine list was empty
+  after the run.
+- A publish on a machine without a cache disk answered HTTP 400 with
+  `machine '<name>' has no cache disk`.
+- `make smolvm-clean` called `DELETE /api/v1/cache-bases/{base}` for
+  both derivable names and printed one `cache_base_removed=<name>` line
+  per call. No base existed, so nothing was removed. The 204 answer
+  makes the call succeed when the base is absent.
+- Conclusion: the serve API cannot create the first cache base. A
+  create needs an existing base file, a publish needs an attached cache
+  disk, and no route writes the first file into the server's
+  `--cache-disk-dir`. This client attaches only the content-keyed base
+  name, so a base seeded under another name does not engage the flow.
+
+Verified live on 2026-11-19 after the user seeded the blank base
+`smolvm-seed.qcow2` in the server's cache disk directory:
+
+- A create with `cacheDisk` base `smolvm-seed.qcow2` returned 200. The
+  answer carried `"cacheDisk":{"base":"smolvm-seed.qcow2",
+  "mountPath":"/cache","slot":false}`. The probe machine was deleted.
+- A normal `make smolvm-exec` run tried the content base, got the
+  `cannot stat cache base` answer, printed one warning that names the
+  seed, and created the machine with the seed base. The full init took
+  81 seconds.
+- The client stopped the machine and published the content base. The
+  server answered HTTP 400 with
+  `cache disks are not supported on this host`. The client printed the
+  status, the message, and one warning, and the run continued.
+- The second readiness check after the restart used the exec id
+  `<machine>-ready` again. The server answered HTTP 409 with `execId
+  '<id>' already ran on this machine and was collected`. The client now
+  uses a fresh id for that check. The next run completed with exit
+  code 0 and the machine list empty.
+- The next run also attached the seed, because no content base exists
+  on this host. Its init took 85 seconds. Inside the guest,
+  `mise --version` printed `2026.11.9 linux-x64 (2026-11-16)`,
+  `which mise` printed `/usr/local/bin/mise`, and `shellcheck --version`
+  printed `0.11.0`.
+- A raw publish call with the exact spec body on a seed-attached
+  machine answered HTTP 400 with
+  `cache disks are not supported on this host`. The client is not the
+  cause.
+- Result: the seed bootstrap works live. The content base and the warm
+  init do not work on this Windows host, because it refuses every
+  publish. Each run pays full provisioning.
+
 Verified on 2026-11-17 with `smolvm serve` v1.33.0 at
 `http://127.0.0.1:5000`:
 
@@ -78,20 +165,20 @@ Verified on 2026-11-17 with `smolvm serve` v1.33.0 at
 - `hello-world` and `bash:latest` pulled and started on this server.
 - A create with `debian:stable-slim` returned 200. The machine was not
   started.
+- That server has no `/execs` routes. A run against it uses the stream
+  and buffered fallback path.
 
-Still unverified:
+Not verified live:
 
-- The full `make smolvm` check run over HTTP. `bash:latest` does not
-  contain this repository's check tools. The init script needs egress
-  for `apt-get` and mise.run. That install did not run on the test
-  server. The init exec and its exit-code check are covered only by
-  the fake-curl test.
-- Remote cleanup on the live server. The fake-curl test covers the
-  `smolvm-remote-*` name filter and the delete calls.
-- The fake-curl test covers the request order, the image field, the
-  `network: true` field, the init exec, the exit-code handling, the
-  cleanup, the token header, and the decoding of `stdout` and `stderr`.
-  It does not cover the base64 output fields `stdoutB64` and `stderrB64`.
+- A successful cache publish, the content base, the warm init, and the
+  init duration gain. The 1.35.4 Windows host attaches the seed base
+  and refuses every publish with
+  `cache disks are not supported on this host`.
+- The full `make smolvm` check run over HTTP. The live runs used
+  `make smolvm-exec`, which runs the same remote flow with a guest
+  command.
+- Remote cleanup of a real base. `make smolvm-clean` and its
+  cache-base step ran live, but the host published no base to remove.
 - `./smol/verify.sh` (`make smolvm-verify`). The inside and
   outside isolation assertions were not confirmed green on a KVM
   host. Nothing reports `result=isolation_held` yet. The
@@ -213,6 +300,18 @@ Set `SMOLVM_SERVE_ADDR` to run the checks on a remote host. The scripts
 call a `smolvm serve` HTTP endpoint with `curl`. The local CLI is not used.
 No new runtime is added. The repository is not baked into a machine image.
 
+The client probes the server for the exec session API. A server with the
+session endpoints runs every exec in one resumable session and streams a
+piped stdin to the guest command. A server without them prints one
+warning and uses the stream and buffered paths of the earlier flow. See
+[Exec sessions](#exec-sessions).
+
+A server with `--cache-disk-dir` can keep the installed tools in a
+published base. The client asks for the disk by default and publishes it
+after a cold init. See [Cache disk](#cache-disk). Set
+`SMOLVM_SERVE_SYNC_DIR` to send one local directory with the run. See
+[Local data upload](#local-data-upload).
+
 ### Environment variables
 
 - `SMOLVM_SERVE_ADDR` sets the server address. Use a full URL such as
@@ -227,6 +326,29 @@ No new runtime is added. The repository is not baked into a machine image.
   tools already installed.
 - `SMOLVM_SERVE_TIMEOUT` sets the curl timeout in seconds. The default
   value is `120`. The local path still uses `SMOLVM_TIMEOUT`.
+- `SMOLVM_SERVE_RUN_TIMEOUT` sets the total timeout of one remote run
+  in seconds. The default is `1800`. The value must be a positive
+  integer. The timeout bounds the whole remote run after the staging
+  step, including the init exec and the guest command. Each HTTP call
+  still uses `SMOLVM_SERVE_TIMEOUT` as its curl max-time.
+- `SMOLVM_SERVE_ALLOW_HOSTS` adds an egress allow list to the machine.
+  The value is a comma-separated list of hostnames. The default is
+  unset. An unset value keeps the create body unchanged. A set value
+  adds the `allowedHosts` field to the create body. The scripts stop
+  when one entry is empty. See
+  [Egress allow list](#egress-allow-list).
+- `SMOLVM_SERVE_CACHE` turns the remote cache disk on or off. The
+  default is `1`. The value must be `0` or `1`. See
+  [Cache disk](#cache-disk).
+- `SMOLVM_SERVE_CACHE_SEED` names the blank base that builds a missing
+  content base. The default is `smolvm-seed.qcow2`. An empty value
+  disables the seed attempt. The value is a bare file name of at most
+  128 characters: letters, digits, hyphens, underscores, and the suffix
+  `.qcow2`, `.img`, or `.raw`. See [Cache disk](#cache-disk).
+- `SMOLVM_SERVE_SYNC_DIR` sends one local directory to the machine in
+  addition to the worktree archive. `SMOLVM_SERVE_SYNC_TARGET` names the
+  absolute guest path for it. The default is `/workspace`. See
+  [Local data upload](#local-data-upload).
 - `SMOLVM_CPUS` sets the CPU count of the machine. The default value is
   `1`. The value must be a positive integer.
 - `SMOLVM_MEMORY_MB` sets the memory of the machine in MiB. The default
@@ -242,9 +364,10 @@ require a successful remote run. They never run the checks or the user
 command on the host. If a call fails, they print an error and exit non-zero.
 
 The remote path prints two warnings on stderr. The first warning says
-that the local pack cache is not used. The second warning says that the
-init script installs the tools on every run. Remote mode has no pack and
-no cache. `make smolvm-pack` refuses to run while `SMOLVM_SERVE_ADDR` has
+that the local pack cache is not used. The second warning says what the
+init script downloads: the tools on every run when the cache is off, or
+the tools only when the cache base is missing when the cache is on.
+`make smolvm-pack` refuses to run while `SMOLVM_SERVE_ADDR` has
 a value. Unset the variable before you build a local pack.
 
 ### API flow
@@ -267,21 +390,38 @@ source it. One run follows these steps:
     from the local pack cache.
 4. Call `GET /health` to check that the server answers.
 5. Call `POST /api/v1/machines` with `image` and `network: true` to
-    create a machine.
+    create a machine. The body carries `allowedHosts` when
+    `SMOLVM_SERVE_ALLOW_HOSTS` is set. It carries `cacheDisk` when
+    `SMOLVM_SERVE_CACHE` is on. A server that refuses the cache disk
+    gets one retry without the field.
 6. Call `POST /api/v1/machines/<name>/start` to start it.
-7. Call `POST /api/v1/machines/<name>/exec` to check the workload.
+7. Probe the exec session API. The client calls the read-only list
+    route `GET /api/v1/machines/<name>/execs`. A 200 answer turns
+    session mode on. A 404 with an empty or non-JSON body turns it off.
+    The client prints one warning and uses the fallback flow below. Any
+    other answer stops the run with the HTTP status and the server
+    message.
 8. Call `PUT /api/v1/machines/<name>/files/...` to upload the archive.
-9. Call `POST /api/v1/machines/<name>/exec` to extract the archive.
-10. Call `POST /api/v1/machines/<name>/exec` to run `bash
-    /workspace/smol/init.sh`. Init output appears on the console. A
-    non-zero `exitCode` stops the run.
-11. Call `POST /api/v1/machines/<name>/exec/stream` to run the guest
-    command. This endpoint returns Server-Sent Events. The client prints
-    each output event when it arrives. It reads `exitCode` from the exit
-    event. When the stream gives no output and no exit code, the client
-    uses the buffered path. The client then calls `POST
-    /api/v1/machines/<name>/exec` for the same command.
-12. Call `DELETE /api/v1/machines/<name>` to delete the machine.
+    The client measures the archive first. A size above 1 GiB stops the
+    run before the call. When `SMOLVM_SERVE_SYNC_DIR` is set, the
+    client uploads that directory as a second archive and extracts it
+    to a fresh guest directory that it moves into place.
+9. Session mode: run the extract exec, the sync extract, the init
+    exec, and the guest command through exec sessions. See
+    [Exec sessions](#exec-sessions). Init output appears on the console.
+    A non-zero `exitCode` stops the run. After a cold init with an
+    attached cache disk, the client stops the machine, publishes the
+    cache disk, and starts the machine again. See
+    [Cache disk](#cache-disk).
+10. Fallback mode: call `POST /api/v1/machines/<name>/exec` to extract
+    the archive. Call it again to run `bash /workspace/smol/init.sh`.
+    Then call `POST /api/v1/machines/<name>/exec/stream` to run the
+    guest command. This endpoint returns Server-Sent Events. The client
+    prints each output event when it arrives. It reads `exitCode` from
+    the exit event. When the stream gives no output and no exit code,
+    the client calls `POST /api/v1/machines/<name>/exec` for the same
+    command.
+11. Call `DELETE /api/v1/machines/<name>` to delete the machine.
 
 Both modes use the same guest command. It is
 `cd /workspace && SMOLVM_ENABLED=0 SMOLVM_GUEST=1 bash scripts/ci.sh`.
@@ -289,16 +429,19 @@ For `make smolvm-exec` the command runs with the same two variables.
 
 An exec call returns HTTP 200 when the guest command fails. The helper
 reads `exitCode` from the response body. A stream call gives the same
-value in its exit event. The guest exit code becomes the exit code of
-the script. The exit trap deletes the machine on every path. The trap
-also removes the local archive and the stream state directory.
+value in its exit event. A session gives it in the answer that reports
+`done`. The guest exit code becomes the exit code of the script. The
+exit trap deletes the machine on every path. The trap also removes the
+local archive and the stream state directory.
 
 ### Serve API reference
 
-This repository calls the smolvm serve API 0.5.2. The spec is an OpenAPI
-3.1.0 document. This section records the endpoints that the scripts call.
-It records the fields that the scripts send or read. A server may run a
-different API version.
+This repository calls the smolvm serve API of two generations. The 0.5.2
+spec is the floor: every server that this repository supports answers
+those endpoints. The 1.35.4 server adds the `/execs` session family and
+the cache-base routes. Its OpenAPI document names the session frame
+format. A server may run a different API version. The probe decides what
+a run uses.
 
 #### Endpoints that this repository calls
 
@@ -316,30 +459,233 @@ different API version.
 | | | | Resp: SSE events with `stdout`, `stderr`, `exitCode` |
 | PUT | `/api/v1/machines/{id}/files/{path}` | Upload archive. | `id`, `path` |
 | | | | Body: `application/octet-stream` |
+| POST | `/api/v1/machines/{name}/execs` | Start a session. | Req: `execId` |
+| | | | Req: `command` |
+| GET | `/api/v1/machines/{name}/execs/{exec}` | Read output. | |
+| | | | Query: `after`, `wait` |
+| | | | Resp: chunks, `next`, `done` |
+| POST | `/api/v1/machines/{name}/execs/{exec}/stdin` | Send a frame. | |
+| | | | Req: `seq`, `data`, `eof` |
+| DELETE | `/api/v1/machines/{name}/execs/{exec}` | End a session. | |
+| POST | `/api/v1/machines/{name}/stop` | Stop the machine. | |
+| POST | `/api/v1/machines/{name}/cache-disk/publish` | Publish. | |
+| | | | Req: `base` |
+| DELETE | `/api/v1/cache-bases/{base}` | Remove one base. | Path: `base` |
 | GET | `/api/v1/machines` | List machines. | Read `name` from each item. |
 | DELETE | `/api/v1/machines/{name}` | Delete a machine. | Path: `name` |
 
 In the table, `Req` names fields in the request body. `Resp` names fields
 in the response body. A `name` or `id` in braces is a path parameter.
 
+The three `/execs` rows are absent from the serve API 0.5.2 spec. They
+exist on newer servers only. The probe handles a server without them.
+
 The scripts send `command` as an array of strings. The first item names
 the program. The other items are its arguments. The scripts read
 `exitCode` as an integer. A value other than 0 stops the run. The upload
 sends the worktree archive as an octet-stream body.
 
+#### Exec sessions
+
+A newer server keeps an exec session on the machine. The session belongs
+to the machine, not to the connection that started it. A client can drop
+off and read the rest later.
+
+The client chooses the `execId` before the first start. The id uses 8
+to 64 characters of `A-Z`, `a-z`, `0-9`, `_` and `-`. This repository
+builds the id from the machine name and a purpose tag, for example
+`smolvm-remote-<pid>-<random>-guest`. A start that repeats an `execId`
+returns the session that the first start made. The command does not run
+twice. On a retried start the client sends the same `execId`.
+
+The start call is `POST /api/v1/machines/<name>/execs`. The body carries
+the `execId`, the `command` array, and `waitSecs`. The wait lets a short
+command finish in this one request, because the answer then carries the
+output from offset 0. The client sends `waitSecs` from
+`SMOLVM_SERVE_TIMEOUT` minus a margin, capped at the server limit of 60
+seconds.
+
+Each answer is one `ExecSessionResponse`. The answer carries `output`,
+an array of chunks. One chunk names its `stream`, `stdout` or `stderr`,
+and carries its bytes base64-encoded in `data`. Stdout and stderr share
+one offset space. The output is byte-exact by construction. This path
+has no lossy fallback. The answer also carries `next`, the next byte
+offset to read, `done`, and after the exit the `exitCode`.
+
+The client reads output with `GET /api/v1/machines/<name>/execs/
+<execId>?after=<next>&wait=<seconds>`. The first `next` comes from the
+start answer. The `wait` long-polls for output or the exit, so the client
+does not sleep between reads. It reads until an answer reports `done`
+and takes the exit code from the last answer. It deletes the session
+with `DELETE /api/v1/machines/<name>/execs/<execId>` after `done` and on
+every failure path.
+
+A failed read retries the same `GET` with the same `after` after one
+second. The client stops after three failed reads in a row. It also
+stops when `SMOLVM_SERVE_RUN_TIMEOUT` expires. An answer that reports
+`lost` output stops the run with an error that names the gap. The reader
+fell behind and the server dropped those bytes. The run cannot continue
+without them. The session path sends no `timeoutSecs`, so one long init
+run no longer hits the single-request cap.
+
+The frame format above follows the serve API of smolvm 1.35.4. It was
+read from that server's OpenAPI document and verified live. The 0.5.2
+spec does not list the `/execs` routes, so a server of the 0.5.2
+generation lacks them. The probe handles that case.
+
+#### Session stdin
+
+A piped local stdin streams to the guest command as numbered frames. The
+client starts the guest session with `interactive` set. It reads the
+local stdin in chunks of at most 64 KiB. It sends each chunk with
+`POST /api/v1/machines/<name>/execs/<execId>/stdin` as `seq` from 1 and
+`data` base64-encoded. The last frame carries `eof`. A frame already
+applied is acknowledged and ignored, so the client may send the same
+`seq` again after a failure. It retries one frame up to three times.
+After each frame it reads the session output without a wait, so the
+guest output interleaves with the input. The checks path never sends
+stdin.
+
+The fallback path has no frames. It sends the whole local stdin as the
+one-shot `stdin` string of `ExecRequest`. It stops with an error when
+the input is over one MiB or contains a NUL byte.
+
 #### Exec timeout
 
-`ExecRequest.timeoutSecs` sets a server-side timeout in integer seconds.
-A separate issue changes the scripts to set this field on every remote
-exec call. The value comes from `SMOLVM_SERVE_TIMEOUT`. That variable sets
-the curl client max-time and defaults to 120 seconds. The scripts subtract
-5 seconds. They use a floor of 1. They fall back to 115 when the variable
-is missing or invalid.
+`ExecRequest.timeoutSecs` sets a server-side timeout in integer
+seconds. The fallback path sets this field on every buffered exec call.
+The value comes from `SMOLVM_SERVE_TIMEOUT`. That variable sets the
+curl client max-time and defaults to 120 seconds. The scripts subtract
+5 seconds. They use a floor of 1. They fall back to 115 when the
+variable is missing or invalid.
 
 The server timeout must be shorter than the client timeout. The server
 then returns a response with an `exitCode` before curl gives up. If both
 timeouts are equal, curl can end the call before the server returns the
 exit code.
+
+The session path sends no `timeoutSecs`. One session spans many short
+HTTP calls, so a single-request cap would cut a long init run. The
+whole remote run is bounded by `SMOLVM_SERVE_RUN_TIMEOUT` instead.
+
+#### Upload limit
+
+The serve upload endpoint accepts at most 1 GiB with a `Content-Length`
+and at most 100 MiB without one. A larger upload gets HTTP 413. The
+client measures the archive before the upload. It stops with an error
+that names the limit and the measured size when the archive exceeds
+1 GiB. The 413 handling stays for a server that answers the call
+anyway.
+
+#### Egress allow list
+
+Set `SMOLVM_SERVE_ALLOW_HOSTS` to add an egress allow list to the
+machine. The value is a comma-separated list of hostnames. The scripts
+trim one space around each entry. An empty entry, or a value of only
+spaces, stops the run with an error. The field `allowedHosts` exists in
+the serve API 0.5.2 spec. The server learns the DNS answers for the
+allowed names into its egress allow list. Subdomains of an allowed name
+are allowed too.
+
+One limit stays. A machine that `serve` starts cannot reach a private,
+carrier-NAT or loopback address, even when its allow list names one.
+`serve` raises this egress floor for every machine it starts. No allow
+list entry lowers it. Lift the floor only with the server-side
+environment variables of `serve`. This repository does not try to work
+around the floor.
+
+#### Cache disk
+
+Set `SMOLVM_SERVE_CACHE=1` to ask the server for a cache disk. The
+default is `1`. Set `0` to turn the feature off. The create body then
+gains `cacheDisk` with `mountPath` `/cache` and a base named
+`smolvm-ci-<key>.qcow2`. The `<key>` is the same SHA-256 that the local
+pack cache uses. A change to `mise.toml`, one `smol/*.smolfile`,
+`smol/pack-build.sh`, or `smol/init.sh` names a new base. Base names
+are immutable on the server, so one repository state owns one base
+name.
+
+The machine reads the base through its own copy-on-write layer mounted
+at `/cache`. `smol/init.sh` puts the apt archives, the mise download
+cache, the mise data, and the mise binary under `/cache`. The wiring
+under `/etc` and `/usr/local/bin` lives on the overlay and is written
+again on every run. A machine from a published base reuses the
+downloads. The init script prints `smolvm-init-mode=warm` then. A cold
+machine prints `smolvm-init-mode=cold` and downloads everything. The
+client prints the init duration on every remote run.
+
+The seed base builds the first content base. Seed it once on the
+server: create one empty file in the server's cache disk directory. A
+blank base is valid; the runtime formats it as ext4 at the mount path.
+The default name is `smolvm-seed.qcow2`. On a Windows server, run one
+of these commands:
+
+```text
+cmd:        type nul > C:\cache\smolvm\smolvm-seed.qcow2
+PowerShell: New-Item -ItemType File C:\cache\smolvm\smolvm-seed.qcow2
+```
+
+On a POSIX server, run this command:
+
+```text
+: > /path/to/cache-dir/smolvm-seed.qcow2
+```
+
+Set `SMOLVM_SERVE_CACHE_SEED` to another bare file name. An empty
+value turns the seed attempt off. The seed name does not use the
+`smolvm-ci-` prefix, so the clean step never deletes it.
+
+The create sequence with caching on:
+
+1. Try the create with the content base `smolvm-ci-<key>.qcow2`.
+2. On HTTP 400 with `cannot stat cache base` in the server message,
+    try the create once with the seed base. One warning names the seed.
+3. When the seed attempt also fails, create once without `cacheDisk`.
+    One warning says the run pays full provisioning.
+4. On HTTP 400 that says cache disks are disabled, create once
+    without `cacheDisk` and name the reason.
+5. Any other failure stops the run with the status and the message.
+
+The publish rule: after a successful init, the client publishes the
+content base when the machine attached the seed. It stops the machine,
+publishes, and starts the machine again. A publish answer of 409 names
+a base that exists already. The client treats that answer as success. A
+run that attached the content base skips the publish and prints one
+`note:` line. A publish that fails another way prints the status and
+the message and one warning, and the run continues.
+
+One limit stays: later writes to a published base are not published
+again. A provisioning change must change the hash to build a new base.
+Edit `mise.toml` or `smol/init.sh` for that.
+
+The clean step: `make smolvm-clean` deletes the cache bases it can
+name, `DELETE /api/v1/cache-bases/{base}`. The serve API has no list
+route for bases, so only the names derived from the current repository
+state are known. Bases of older repository states keep their names.
+Remove those by hand on the server. The seed base always stays. When
+the seed name matches a derivable name, the client prints one `note:`
+line and skips it. See [Verification status](#verification-status).
+
+#### Local data upload
+
+Set `SMOLVM_SERVE_SYNC_DIR` to send one local directory to the machine
+in addition to the worktree archive. Set `SMOLVM_SERVE_SYNC_TARGET` to
+the absolute guest path for it. The default is `/workspace`. The client
+copies the directory, applies the symlink policy below, and uploads the
+result as its own archive. The guest extracts it to a fresh directory
+and moves it into place, so a stale link in the guest can never be
+written through.
+
+The symlink policy:
+
+1. A relative link that stays inside the directory and names an
+    existing target is preserved as a link.
+2. Any other link that names an existing regular file is replaced with
+    a real copy of that file. This covers absolute links and links that
+    escape the directory.
+3. A link whose target is gone, or is not a regular file, is skipped.
+    The client prints one `warning:` line per skipped link.
+4. A loop of links stops the run with an error before any API call.
 
 #### Output fields
 
@@ -348,7 +694,7 @@ U+FFFD. The fields `stdoutB64` and `stderrB64` carry the raw bytes as
 base64. Those fields are byte-exact. A caller that needs binary-safe
 output uses the base64 fields.
 
-A separate issue changes the scripts to print the base64 fields. When the
+A separate issue changed the scripts to print the base64 fields. When the
 base64 fields are absent, the scripts print the lossy fields. They also
 print a warning on stderr.
 
@@ -385,11 +731,20 @@ server implementation.
 
 `smol/init.sh` holds every provisioning step. The local pack build and
 the remote run both use this one script. The script installs the
-packages with apt-get. It installs mise from mise.run to
-`/usr/local/bin/mise`. It runs `mise install` in `/workspace`. It clears
-the mise cache and trusts `/workspace` in git. It adds the mise shims to
-the login shell PATH and links them into `/usr/local/bin`. It prints an
-`error:` line and exits non-zero when a step fails.
+packages with apt-get. It installs mise from mise.run. It runs
+`mise install` in `/workspace`. It trusts `/workspace` in git. It adds
+the mise shims to the login shell PATH and links them into
+`/usr/local/bin`. It prints an `error:` line and exits non-zero when a
+step fails.
+
+The script is cache-aware. On a remote machine with a cache disk, the
+apt archives, the mise download cache, the mise data, and the mise
+binary live under `/cache`. The wiring under `/etc` and
+`/usr/local/bin` lives on the overlay and is written again on every
+run. The script clears the mise download cache only on the local pack
+path. It prints `smolvm-init-mode=warm` when the machine found the
+cached mise binary and `smolvm-init-mode=cold` when it must download
+everything. A cold init is correct on a cache miss.
 
 The local pack build runs `bash /workspace/smol/init.sh` in the build
 machine. The remote run uploads the working tree and runs the same
@@ -404,9 +759,10 @@ overlays the per-worktree files. It removes the pointer files and the
 worktree list. A normal checkout needs one copy because its git dir is
 its common dir. The client checks the staged git data before it calls
 the API. The upload leaves out `.cache`, so no data comes from the
-local pack cache. Remote mode uses no pack. It installs the tools on
-every run. The create body sets `network: true` so apt-get and mise.run
-can reach their endpoints.
+local pack cache. Remote mode uses no pack. Without a cache disk it
+downloads the tools on every run. With a cache disk it downloads them
+only when the base is missing. The create body sets `network: true` so
+apt-get and mise.run can reach their endpoints.
 
 The serve API has no pack-create endpoint. It also rejects a `smolfile`
 field in the create body with HTTP 422. A create body therefore names an
@@ -683,6 +1039,15 @@ machine. It does not delete other names. A failed delete prints
 `delete_failed=<name>` on stderr and does not stop the run. The client
 does not need `jq`. The script parses the JSON with grep and sed. The
 token stays out of the output.
+
+The target also removes the remote cache bases it can name. It calls
+`DELETE /api/v1/cache-bases/{base}` for the base of the current
+repository state and for the base of the default resource values. It
+prints one `cache_base_removed=<name>` line per call that succeeds. The
+serve API lists no cache bases, so bases of older repository states are
+not derivable. Remove those by hand on the server. The seed base always
+stays. When the seed name matches a derivable name, the target prints
+one `note:` line and never sends the delete.
 
 When `smolvm` is not on `PATH`, the script prints `smolvm=not_found`
 and a note that the machine cleanup was skipped. The cache removal

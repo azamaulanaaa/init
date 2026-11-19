@@ -27,18 +27,26 @@ offline and mounts the repository read-only at `/workspace`. Run
 `make smolvm-verify` to check the isolation. Set `SMOLVM_SERVE_ADDR` to
 use a remote `smolvm serve` endpoint instead. The remote path needs
 `curl` and `tar`. It does not use the local CLI and it has no host
-fallback. A live run verified the API calls and remote exec on
-`smolvm serve` v1.33.0. Remote mode starts from
-`SMOLVM_SERVE_IMAGE`, which defaults to `debian:stable-slim`. The
-`smol/init.sh` script installs the tools on every run. Remote mode
-uploads a portable copy of the git metadata with the working tree, so
-the checks can read the git history. A worktree pointer is resolved on
-the host before upload. It leaves out `.cache`, so no data comes from
-the local pack cache. `make smolvm-pack` exits non-zero while
-`SMOLVM_SERVE_ADDR` is set. Unset the variable to build a local pack.
-With a remote address, `make smolvm-clean` also deletes
-`smolvm-remote-*` machines on the server. The full check run is not
-verified over HTTP yet. See the
+fallback. The client runs every exec in a resumable session on a server
+that offers the session endpoints. It falls back to the streaming path
+on an older server. A live run verified the session flow, a streamed
+stdin, and a local-directory upload on `smolvm serve` v1.35.4. The
+streaming flow was verified on v1.33.0. One remote run stops after
+`SMOLVM_SERVE_RUN_TIMEOUT` seconds. The default is 1800. Remote mode
+starts from `SMOLVM_SERVE_IMAGE`, which defaults to
+`debian:stable-slim`. A server with `--cache-disk-dir` and a seeded
+blank base keeps the installed tools in a published base, so
+`smol/init.sh` downloads them only when the base is missing. Without
+one it downloads them on every run. Set `SMOLVM_SERVE_CACHE_SEED` to
+name the seed base. Set `SMOLVM_SERVE_SYNC_DIR` to send one local
+directory with the run. Remote mode uploads a portable copy of the git
+metadata with the working tree, so the checks can read the git history.
+A worktree pointer is resolved on the host before upload. It leaves out
+`.cache`, so no data comes from the local pack cache. `make smolvm-pack` exits
+non-zero while `SMOLVM_SERVE_ADDR` is set. Unset the variable to build
+a local pack. With a remote address, `make smolvm-clean` also deletes
+`smolvm-remote-*` machines and the named cache bases on the server.
+The full check run is not verified over HTTP yet. See the
 [smolvm documentation](docs/smolvm.md).
 
 Set `SMOLVM_CPUS` to change the CPU count of the microVM. Set
