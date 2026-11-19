@@ -31,6 +31,14 @@ SERVE_RUN_TIMEOUT_SECS=1800
 SERVE_RUN_DEADLINE=0
 # SERVE_STDIN_ONESHOT carries the local stdin for the fallback path.
 SERVE_STDIN_ONESHOT=""
+# SERVE_CACHE_VALUE is 1 when the create body asks for a cache disk.
+# SERVE_CACHE_ATTACHED is 1 when the machine really carries the disk.
+# SERVE_CACHE_ATTACHED_NAME is the base that the machine attached.
+# SERVE_CACHE_SEED names the blank base that builds a missing base.
+SERVE_CACHE_VALUE=1
+SERVE_CACHE_ATTACHED=0
+SERVE_CACHE_ATTACHED_NAME=""
+SERVE_CACHE_SEED="smolvm-seed.qcow2"
 
 # shellcheck source=scripts/smolvm-resources.sh
 source "$(dirname "${BASH_SOURCE[0]}")/smolvm-resources.sh"
@@ -225,6 +233,141 @@ serve_run_timeout_resolve() {
     return 1
   fi
   SERVE_RUN_TIMEOUT_SECS="$value"
+}
+
+# Read and validate the cache switch.
+# The value comes from SMOLVM_SERVE_CACHE. The default is 1.
+# The value must be 0 or 1. The value 1 asks the server for a cache
+# disk that carries the installed tools between runs.
+serve_cache_resolve() {
+  local value="${SMOLVM_SERVE_CACHE-1}"
+  if [[ "$value" != "0" && "$value" != "1" ]]; then
+    echo "error: SMOLVM_SERVE_CACHE must be 0 or 1." >&2
+    return 1
+  fi
+  SERVE_CACHE_VALUE="$value"
+}
+
+# Read and validate the cache seed base name.
+# The value comes from SMOLVM_SERVE_CACHE_SEED. The default is
+# smolvm-seed.qcow2. An empty value disables the seed attempt.
+# The name is a bare file name of at most 128 characters: letters,
+# digits, hyphen, underscore, and one image suffix. A path separator
+# or any other character stops the run.
+serve_cache_seed_resolve() {
+  local value="${SMOLVM_SERVE_CACHE_SEED-smolvm-seed.qcow2}"
+  if [[ -z "$value" ]]; then
+    SERVE_CACHE_SEED=""
+    return 0
+  fi
+  if ((${#value} > 128)) ||
+    [[ ! "$value" =~ ^[A-Za-z0-9_-]+\.(qcow2|img|raw)$ ]]; then
+    echo "error: SMOLVM_SERVE_CACHE_SEED must be a bare file name with the suffix .qcow2, .img, or .raw." >&2
+    echo "error: Use letters, digits, hyphens, and underscores. Do not use a path." >&2
+    return 1
+  fi
+  SERVE_CACHE_SEED="$value"
+}
+
+# Compute the cache base name for one repository state.
+# The key is the same SHA-256 that the local pack cache uses. A change
+# to mise.toml, one smol file, the pack build, or the init script names
+# a new base. Base names stay immutable on the server.
+serve_cache_base_name() {
+  local repo_root="$1"
+  local key
+  key="$(cd "$repo_root" && smolvm_resources_hash_lines | sha256sum | cut -d' ' -f1)" || return 1
+  printf 'smolvm-ci-%s.qcow2' "$key"
+}
+
+# Build one create body.
+# The cache base is optional. An empty name leaves the field out.
+serve_create_body() {
+  local worker="$1"
+  local image="$2"
+  local allow_field="$3"
+  local cache_base="$4"
+  local cache_field=""
+  if [[ -n "$cache_base" ]]; then
+    cache_field=",\"cacheDisk\":{\"base\":\"${cache_base}\",\"mountPath\":\"/cache\"}"
+  fi
+  printf '{"name":"%s","image":"%s","cpus":%s,"memoryMb":%s,"network":true%s%s,"cmd":["sh","-c","while true; do sleep 3600; done"]}' \
+    "$(json_escape "$worker")" "$(json_escape "$image")" \
+    "$SMOLVM_CPUS_VALUE" "$SMOLVM_MEMORY_MB_VALUE" "$allow_field" "$cache_field"
+}
+
+# Send one create call.
+# Set SERVE_LAST_STATUS, SERVE_LAST_ANSWER, and SERVE_LAST_RC.
+serve_create_attempt() {
+  local body="$1"
+  local body_file
+  body_file="$(mktemp "${TMPDIR:-/tmp}/smolvm-api.XXXXXX")" || return 1
+  SERVE_LAST_RC=0
+  SERVE_LAST_STATUS="$(serve_request_capture POST /api/v1/machines "$body_file" \
+    -H 'content-type: application/json' \
+    -d "$body")" || SERVE_LAST_RC=$?
+  SERVE_LAST_ANSWER=""
+  if [[ -f "$body_file" ]]; then
+    SERVE_LAST_ANSWER="$(cat "$body_file" 2>/dev/null || true)"
+  fi
+  rm -f "$body_file"
+  return 0
+}
+
+# Stop the machine, publish its cache disk as a base, and start the
+# machine again. A publish answer of 409 names a base that exists
+# already. Treat that answer as success. Print one warning when the
+# publish fails another way. Return 1 only when the machine did not
+# restart.
+serve_publish_cache_disk() {
+  local worker="$1"
+  local base="$2"
+  local body_file
+  local status=""
+  local rc=0
+  local answer=""
+
+  if ! serve_request_ok "stop machine" POST "/api/v1/machines/${worker}/stop" \
+    -H 'content-type: application/json' \
+    -d '{}' >/dev/null; then
+    echo "warning: the machine did not stop for the cache publish." >&2
+    return 0
+  fi
+
+  body_file="$(mktemp "${TMPDIR:-/tmp}/smolvm-api.XXXXXX")" || return 1
+  status="$(serve_request_capture POST \
+    "/api/v1/machines/${worker}/cache-disk/publish" \
+    "$body_file" \
+    -H 'content-type: application/json' \
+    -d "{\"base\":\"${base}\"}")" || rc=$?
+  if [[ -f "$body_file" ]]; then
+    answer="$(cat "$body_file" 2>/dev/null || true)"
+  fi
+  rm -f "$body_file"
+
+  if ((rc == 0)) && [[ "$status" == "200" ]]; then
+    local published_size=""
+    local published_sha=""
+    published_size="$(serve_json_number_field "$answer" sizeBytes)"
+    published_sha="$(serve_json_string_field "$answer" sha256)"
+    if [[ -n "$published_size" && -n "$published_sha" ]]; then
+      echo "note: the cache base ${base} was published: ${published_size} bytes, sha256 ${published_sha}." >&2
+    else
+      echo "note: the cache base ${base} was published." >&2
+    fi
+  elif ((rc == 0)) && [[ "$status" == "409" ]]; then
+    echo "note: the cache base ${base} exists already." >&2
+  else
+    serve_api_error "publish cache disk" "$status" "$answer"
+    echo "warning: The cache base was not published. The next run provisions again." >&2
+  fi
+
+  if ! serve_request_ok "start machine" POST "/api/v1/machines/${worker}/start" \
+    -H 'content-type: application/json' \
+    -d '{}' >/dev/null; then
+    return 1
+  fi
+  return 0
 }
 
 # Check the archive size before the upload.
@@ -1339,13 +1482,23 @@ serve_run_remote() {
   if ! serve_run_timeout_resolve; then
     return 1
   fi
+  if ! serve_cache_resolve; then
+    return 1
+  fi
+  if ! serve_cache_seed_resolve; then
+    return 1
+  fi
   local allow_field=""
   if ! allow_field="$(serve_allow_hosts_field)"; then
     return 1
   fi
 
   echo "warning: remote mode does not use the local pack cache." >&2
-  echo "warning: the init script installs the tools on every run." >&2
+  if [[ "$SERVE_CACHE_VALUE" == "1" ]]; then
+    echo "warning: the init script downloads the tools when the cache base is missing." >&2
+  else
+    echo "warning: the init script installs the tools on every run." >&2
+  fi
 
   repo_root="$(git rev-parse --show-toplevel)"
 
@@ -1421,6 +1574,12 @@ serve_run_remote() {
     return 1
   fi
 
+  # The cache base name follows the repository state.
+  local cache_base=""
+  if [[ "$SERVE_CACHE_VALUE" == "1" ]]; then
+    cache_base="$(serve_cache_base_name "$repo_root")" || return 1
+  fi
+
   # The total backstop bounds the remote run from here. It covers the
   # upload, the init exec, and the guest command.
   local deadline_now
@@ -1431,15 +1590,68 @@ serve_run_remote() {
     return 1
   fi
 
-  local create_body
-  create_body="$(
-    printf '{"name":"%s","image":"%s","cpus":%s,"memoryMb":%s,"network":true%s,"cmd":["sh","-c","while true; do sleep 3600; done"]}' \
-      "$(json_escape "$worker")" "$(json_escape "$image")" \
-      "$SMOLVM_CPUS_VALUE" "$SMOLVM_MEMORY_MB_VALUE" "$allow_field"
-  )"
-  if ! serve_request_ok "create machine" POST /api/v1/machines \
-    -H 'content-type: application/json' \
-    -d "$create_body" >/dev/null; then
+  # Create the machine. Ask for a cache disk when the cache is on. A
+  # missing content base falls back to the seed base. The seed builds
+  # the content base for the next run.
+  SERVE_CACHE_ATTACHED=0
+  SERVE_CACHE_ATTACHED_NAME=""
+  serve_create_attempt "$(serve_create_body "$worker" "$image" "$allow_field" "$cache_base")"
+
+  if ((SERVE_LAST_RC == 0)) && [[ "$SERVE_LAST_STATUS" == 2* ]]; then
+    if [[ -n "$cache_base" ]]; then
+      SERVE_CACHE_ATTACHED=1
+      SERVE_CACHE_ATTACHED_NAME="$cache_base"
+    fi
+  elif [[ -n "$cache_base" ]] && [[ "$SERVE_LAST_STATUS" == "400" || "$SERVE_LAST_STATUS" == "422" ]]; then
+    local refuse_reason
+    refuse_reason="$(serve_json_string_field "$SERVE_LAST_ANSWER" error)"
+    if [[ "$refuse_reason" == *"cannot stat cache base"* && -n "$SERVE_CACHE_SEED" ]]; then
+      # The content base is missing. Attach the seed base and build the
+      # content base from it.
+      serve_request DELETE "/api/v1/machines/${worker}" >/dev/null 2>&1 || true
+      echo "warning: the base ${cache_base} is missing on the server. This run attaches the seed ${SERVE_CACHE_SEED} and builds the base." >&2
+      serve_create_attempt "$(serve_create_body "$worker" "$image" "$allow_field" "$SERVE_CACHE_SEED")"
+      if ((SERVE_LAST_RC == 0)) && [[ "$SERVE_LAST_STATUS" == 2* ]]; then
+        SERVE_CACHE_ATTACHED=1
+        SERVE_CACHE_ATTACHED_NAME="$SERVE_CACHE_SEED"
+      else
+        # The seed did not attach. Continue without a cache disk.
+        serve_request DELETE "/api/v1/machines/${worker}" >/dev/null 2>&1 || true
+        local seed_reason
+        seed_reason="$(serve_json_string_field "$SERVE_LAST_ANSWER" error)"
+        if [[ -n "$seed_reason" ]]; then
+          echo "warning: the seed base ${SERVE_CACHE_SEED} did not attach: ${seed_reason}" >&2
+        else
+          echo "warning: the seed base ${SERVE_CACHE_SEED} did not attach." >&2
+        fi
+        echo "warning: The run pays full provisioning." >&2
+        if ! serve_request_ok "create machine" POST /api/v1/machines \
+          -H 'content-type: application/json' \
+          -d "$(serve_create_body "$worker" "$image" "$allow_field" "")" >/dev/null; then
+          return 1
+        fi
+      fi
+    elif [[ "$refuse_reason" == *"cache disks are disabled"* || -z "$SERVE_CACHE_SEED" ]]; then
+      # The server has the feature off, or the seed is disabled. Name
+      # the reason and continue without a cache disk.
+      serve_request DELETE "/api/v1/machines/${worker}" >/dev/null 2>&1 || true
+      if [[ -n "$refuse_reason" ]]; then
+        echo "warning: the server refused the cache disk: ${refuse_reason}" >&2
+      else
+        echo "warning: the server refused the cache disk." >&2
+      fi
+      echo "warning: The run pays full provisioning." >&2
+      if ! serve_request_ok "create machine" POST /api/v1/machines \
+        -H 'content-type: application/json' \
+        -d "$(serve_create_body "$worker" "$image" "$allow_field" "")" >/dev/null; then
+        return 1
+      fi
+    else
+      serve_api_error "create machine" "$SERVE_LAST_STATUS" "$SERVE_LAST_ANSWER"
+      return 1
+    fi
+  else
+    serve_api_error "create machine" "$SERVE_LAST_STATUS" "$SERVE_LAST_ANSWER"
     return 1
   fi
 
@@ -1544,6 +1756,24 @@ serve_run_remote() {
       echo "error: the remote machine was not provisioned." >&2
       return 1
     fi
+  fi
+
+  # Publish the content-keyed base when the run attached the seed. A
+  # run that attached the content-keyed base uses the published base
+  # and publishes nothing.
+  if [[ "$SERVE_CACHE_ATTACHED" == "1" && "$SERVE_CACHE_ATTACHED_NAME" != "$cache_base" ]]; then
+    if ! serve_publish_cache_disk "$worker" "$cache_base"; then
+      return 1
+    fi
+    local ready2_log
+    ready2_log="$(mktemp "${TMPDIR:-/tmp}/smolvm-ready.XXXXXX")" || return 1
+    if ! serve_readiness_check "$worker" "$ready2_log" ready2; then
+      rm -f "$ready2_log"
+      return 1
+    fi
+    rm -f "$ready2_log"
+  elif [[ "$SERVE_CACHE_ATTACHED" == "1" ]]; then
+    echo "note: the run used the published base ${cache_base}." >&2
   fi
 
   if ((SERVE_SESSION_MODE == 1)); then

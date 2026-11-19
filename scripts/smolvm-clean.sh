@@ -112,6 +112,36 @@ if [[ -n "${SMOLVM_SERVE_ADDR:-}" ]]; then
     else
       echo "note: the remote machine list failed." >&2
     fi
+
+    # Delete the remote cache bases this repository can name. The serve
+    # API has no list route for cache bases, so only the names derived
+    # from the current repository state are known. Bases of older states
+    # keep their names. Remove those by hand on the server.
+    # The seed base always stays. It is never a derivable name, but the
+    # variable may name one, so the loop excludes it.
+    if smolvm_resources_resolve; then
+      cache_bases=()
+      cache_bases+=("$(serve_cache_base_name "$PWD")")
+      if [[ "$SMOLVM_CPUS_VALUE" != "1" || "$SMOLVM_MEMORY_MB_VALUE" != "512" ]]; then
+        cache_bases+=("$(SMOLVM_CPUS_VALUE=1 SMOLVM_MEMORY_MB_VALUE=512 serve_cache_base_name "$PWD")")
+      fi
+      seed_name="${SMOLVM_SERVE_CACHE_SEED-smolvm-seed.qcow2}"
+      kept_bases=()
+      for cache_base in "${cache_bases[@]}"; do
+        if [[ -n "$seed_name" && "$cache_base" == "$seed_name" ]]; then
+          echo "note: the seed base ${seed_name} stays on the server." >&2
+          continue
+        fi
+        kept_bases+=("$cache_base")
+      done
+      for cache_base in "${kept_bases[@]}"; do
+        if serve_request DELETE "/api/v1/cache-bases/${cache_base}" >/dev/null 2>&1; then
+          echo "cache_base_removed=${cache_base}"
+        else
+          echo "cache_base_delete_failed=${cache_base}" >&2
+        fi
+      done
+    fi
   fi
 fi
 
