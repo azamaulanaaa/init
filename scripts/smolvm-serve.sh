@@ -35,10 +35,13 @@ SERVE_STDIN_ONESHOT=""
 # SERVE_CACHE_ATTACHED is 1 when the machine really carries the disk.
 # SERVE_CACHE_ATTACHED_NAME is the base that the machine attached.
 # SERVE_CACHE_SEED names the blank base that builds a missing base.
+# SERVE_SYNC_TARBALL and SERVE_SYNC_STAGE hold the local-data upload.
 SERVE_CACHE_VALUE=1
 SERVE_CACHE_ATTACHED=0
 SERVE_CACHE_ATTACHED_NAME=""
 SERVE_CACHE_SEED="smolvm-seed.qcow2"
+SERVE_SYNC_TARBALL=""
+SERVE_SYNC_STAGE=""
 
 # shellcheck source=scripts/smolvm-resources.sh
 source "$(dirname "${BASH_SOURCE[0]}")/smolvm-resources.sh"
@@ -455,6 +458,14 @@ serve_on_exit() {
   if [[ -n "$SERVE_STREAM_DIR" ]]; then
     rm -rf -- "$SERVE_STREAM_DIR"
     SERVE_STREAM_DIR=""
+  fi
+  if [[ -n "$SERVE_SYNC_TARBALL" ]]; then
+    rm -f "$SERVE_SYNC_TARBALL"
+    SERVE_SYNC_TARBALL=""
+  fi
+  if [[ -n "$SERVE_SYNC_STAGE" ]]; then
+    rm -rf -- "$SERVE_SYNC_STAGE"
+    SERVE_SYNC_STAGE=""
   fi
   exit "$rc"
 }
@@ -1367,6 +1378,72 @@ serve_session_gap_error() {
   echo "error: The reader fell behind. The run cannot continue." >&2
 }
 
+# Stage one local directory for the upload. Apply the symlink policy:
+# - keep a relative link that stays inside the tree,
+# - copy the target of a link that leaves the tree and names a regular
+#   file,
+# - skip the link with one warning when its target is gone or is not a
+#   regular file,
+# - refuse a loop and stop the run.
+serve_sync_stage() {
+  local source_dir="$1"
+  local stage_dir="$2"
+  local link
+  local link_text
+  local resolved
+  local real
+  local hops=0
+
+  mkdir -p "$stage_dir" || return 1
+  if ! cp -a "${source_dir%/}/." "$stage_dir/"; then
+    echo "error: the sync directory was not copied." >&2
+    return 1
+  fi
+
+  while IFS= read -r -d '' link; do
+    link_text="$(readlink "$link")"
+    resolved="$link"
+    hops=0
+    while [[ -L "$resolved" ]]; do
+      link_text="$(readlink "$resolved")"
+      if [[ "$link_text" == /* ]]; then
+        resolved="$link_text"
+      else
+        resolved="$(dirname "$resolved")/$link_text"
+      fi
+      hops=$((hops + 1))
+      if ((hops > 40)); then
+        echo "error: the sync upload found a symlink loop at ${link#"$stage_dir"/}." >&2
+        return 1
+      fi
+    done
+    real="$(realpath -m -- "$resolved")"
+
+    # A relative link that stays inside the tree is safe. Keep it when
+    # its target exists. A dangling link leaves the upload to tar and
+    # gets the skip branch below.
+    if [[ "$link_text" != /* ]]; then
+      if [[ ("$real" == "$stage_dir" || "$real" == "$stage_dir"/*) && -e "$real" ]]; then
+        continue
+      fi
+    fi
+
+    # The link leaves the tree or is absolute. Copy its target when the
+    # target is a regular file. Skip the link otherwise.
+    if [[ -f "$real" ]]; then
+      rm -f "$link"
+      if ! cp -- "$real" "$link"; then
+        echo "error: the sync upload did not copy the target of ${link#"$stage_dir"/}." >&2
+        return 1
+      fi
+    else
+      rm -f "$link"
+      echo "warning: the sync upload skipped ${link#"$stage_dir"/}: its target is missing or is not a regular file." >&2
+    fi
+  done < <(find "$stage_dir" -type l -print0)
+  return 0
+}
+
 # Run one session exec for one purpose and stop the run on any failure.
 # Record the session output in one log file when one is named.
 serve_session_run() {
@@ -1574,6 +1651,39 @@ serve_run_remote() {
     return 1
   fi
 
+  # Stage the selected local directory for its own upload. The tar of
+  # the worktree above never saw the sync staging directory because both
+  # live in the temp directory, not in the repository.
+  local sync_tarball=""
+  local sync_target="${SMOLVM_SERVE_SYNC_TARGET:-/workspace}"
+  if [[ -n "${SMOLVM_SERVE_SYNC_DIR:-}" ]]; then
+    if [[ ! -d "${SMOLVM_SERVE_SYNC_DIR}" ]]; then
+      echo "error: SMOLVM_SERVE_SYNC_DIR is not a directory: ${SMOLVM_SERVE_SYNC_DIR}" >&2
+      return 1
+    fi
+    if [[ "$sync_target" != /* ]]; then
+      echo "error: SMOLVM_SERVE_SYNC_TARGET must be an absolute guest path." >&2
+      return 1
+    fi
+    sync_tarball="$(mktemp "${TMPDIR:-/tmp}/smolvm-sync.XXXXXX.tar.gz")" || return 1
+    SERVE_SYNC_TARBALL="$sync_tarball"
+    local sync_stage
+    sync_stage="$(mktemp -d "${TMPDIR:-/tmp}/smolvm-sync-stage.XXXXXX")" || return 1
+    SERVE_SYNC_STAGE="$sync_stage"
+    if ! serve_sync_stage "${SMOLVM_SERVE_SYNC_DIR}" "$sync_stage"; then
+      return 1
+    fi
+    if ! tar -C "$sync_stage" -czf "$sync_tarball" .; then
+      echo "error: the sync directory archive was not created." >&2
+      return 1
+    fi
+    rm -rf -- "$sync_stage"
+    SERVE_SYNC_STAGE=""
+    if ! serve_upload_precheck "$sync_tarball"; then
+      return 1
+    fi
+  fi
+
   # The cache base name follows the repository state.
   local cache_base=""
   if [[ "$SERVE_CACHE_VALUE" == "1" ]]; then
@@ -1699,8 +1809,23 @@ serve_run_remote() {
   local exec_body
   local guest_rc=""
   local stream_rc=0
+  local sync_extract=""
   local init_started=0
   local init_ended=0
+
+  if [[ -n "$sync_tarball" ]]; then
+    # Extract the sync archive to a fresh directory and move it into
+    # place. A stale link in the guest can never be written through.
+    sync_extract="rm -rf /root/smolvm-sync.new && mkdir -p /root/smolvm-sync.new && tar -xzf /root/smolvm-sync.tar.gz -C /root/smolvm-sync.new && mkdir -p '$(dirname "$sync_target")' && rm -rf '${sync_target}' && mv /root/smolvm-sync.new '${sync_target}'"
+    if ! serve_request_ok "upload local data" PUT \
+      "/api/v1/machines/${worker}/files/%2Froot%2Fsmolvm-sync.tar.gz" \
+      -H 'content-type: application/octet-stream' \
+      --data-binary "@${sync_tarball}" >/dev/null; then
+      return 1
+    fi
+    rm -f "$sync_tarball"
+    SERVE_SYNC_TARBALL=""
+  fi
 
   if ((SERVE_SESSION_MODE == 1)); then
     # The session path removes the single-request timeout cap from the
@@ -1712,6 +1837,16 @@ serve_run_remote() {
     if [[ "$SERVE_SESSION_EXIT_CODE" != "0" ]]; then
       echo "error: the working tree was not extracted in the remote machine." >&2
       return 1
+    fi
+
+    if [[ -n "$sync_extract" ]]; then
+      if ! serve_session_run "$worker" sync "$sync_extract"; then
+        return 1
+      fi
+      if [[ "$SERVE_SESSION_EXIT_CODE" != "0" ]]; then
+        echo "error: the local data was not extracted in the remote machine." >&2
+        return 1
+      fi
     fi
 
     init_started="$(date +%s)"
@@ -1737,6 +1872,20 @@ serve_run_remote() {
     if [[ "$setup_rc" != "0" ]]; then
       echo "error: the working tree was not extracted in the remote machine." >&2
       return 1
+    fi
+
+    if [[ -n "$sync_extract" ]]; then
+      if ! response="$(serve_request_ok "extract local data" POST \
+        "/api/v1/machines/${worker}/exec" \
+        -H 'content-type: application/json' \
+        -d "{\"command\":[\"bash\",\"-lc\",\"$(json_escape "$sync_extract")\"],\"timeoutSecs\":${SERVE_EXEC_TIMEOUT_SECS}}")"; then
+        return 1
+      fi
+      setup_rc="$(serve_exec_rc "$response")"
+      if [[ "$setup_rc" != "0" ]]; then
+        echo "error: the local data was not extracted in the remote machine." >&2
+        return 1
+      fi
     fi
 
     init_started="$(date +%s)"
