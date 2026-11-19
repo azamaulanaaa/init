@@ -17,6 +17,21 @@ SERVE_STREAM_DIR=""
 SERVE_GUEST_RC=0
 SERVE_EXEC_TIMEOUT_SECS=0
 
+# Globals for the exec session path.
+# SERVE_SESSION_MODE is 1 when the server runs exec sessions.
+# SERVE_SESSION_EXIT_CODE carries one guest exit code after one session.
+# SERVE_SESSION_LOG names one file that also records the session output.
+# SERVE_WAIT_SECS is the long-poll budget for one session read.
+# SERVE_RUN_DEADLINE is the epoch second when the run must stop.
+SERVE_SESSION_MODE=0
+SERVE_SESSION_EXIT_CODE=""
+SERVE_SESSION_LOG=""
+SERVE_WAIT_SECS=55
+SERVE_RUN_TIMEOUT_SECS=1800
+SERVE_RUN_DEADLINE=0
+# SERVE_STDIN_ONESHOT carries the local stdin for the fallback path.
+SERVE_STDIN_ONESHOT=""
+
 # shellcheck source=scripts/smolvm-resources.sh
 source "$(dirname "${BASH_SOURCE[0]}")/smolvm-resources.sh"
 
@@ -87,6 +102,15 @@ serve_init() {
   SERVE_EXEC_TIMEOUT_SECS=$((whole_secs - 5))
   if ((SERVE_EXEC_TIMEOUT_SECS < 1)); then
     SERVE_EXEC_TIMEOUT_SECS=1
+  fi
+  # Compute the long-poll budget for the session reads. The server caps
+  # the wait at 60 seconds. Keep the wait under the curl max-time.
+  SERVE_WAIT_SECS=$((whole_secs - 5))
+  if ((SERVE_WAIT_SECS < 1)); then
+    SERVE_WAIT_SECS=1
+  fi
+  if ((SERVE_WAIT_SECS > 60)); then
+    SERVE_WAIT_SECS=60
   fi
   return 0
 }
@@ -188,6 +212,19 @@ serve_request_ok() {
   fi
   serve_api_error "$step" "$status" "$body"
   return 1
+}
+
+# Read and validate the total remote run timeout.
+# The value comes from SMOLVM_SERVE_RUN_TIMEOUT in seconds. The default
+# is 1800. The value must be a positive integer. The timeout bounds the
+# whole remote run after the staging step.
+serve_run_timeout_resolve() {
+  local value="${SMOLVM_SERVE_RUN_TIMEOUT-1800}"
+  if [[ ! "$value" =~ ^[1-9][0-9]*$ ]]; then
+    echo "error: SMOLVM_SERVE_RUN_TIMEOUT must be a positive integer." >&2
+    return 1
+  fi
+  SERVE_RUN_TIMEOUT_SECS="$value"
 }
 
 # Check the archive size before the upload.
@@ -714,12 +751,543 @@ serve_stream_exec() {
   return 1
 }
 
+# Build one exec session id from the machine name and a purpose tag.
+# The id matches the server rule: 8 to 64 characters of A-Z, a-z, 0-9,
+# underscore, and hyphen. Choose the id before the first start. A retried
+# start with the same id finds the session that the first start made.
+serve_session_exec_id() {
+  local worker="$1"
+  local purpose="$2"
+  local exec_id="${worker}-${purpose}"
+  if [[ ! "$exec_id" =~ ^[A-Za-z0-9_-]{8,64}$ ]]; then
+    echo "error: the exec session id is not valid: ${exec_id}" >&2
+    return 1
+  fi
+  printf '%s' "$exec_id"
+}
+
+# Build the body for one session start.
+# The wait field lets a short command finish in this one request.
+# The interactive field keeps stdin open for numbered frames.
+serve_session_body() {
+  local exec_id="$1"
+  local command="$2"
+  local stdin_mode="${3:-none}"
+  local body
+  body="$(printf '{"execId":"%s","command":["bash","-lc","%s"],"waitSecs":%s' \
+    "$exec_id" "$(json_escape "$command")" "$SERVE_WAIT_SECS")"
+  if [[ "$stdin_mode" == "pipe" ]]; then
+    body+=',"interactive":true'
+  fi
+  body+='}'
+  printf '%s' "$body"
+}
+
+# Delete one exec session. Ignore the answer. The exit trap removes the
+# machine and its sessions when this call fails.
+serve_session_delete() {
+  local worker="$1"
+  local exec_id="$2"
+  serve_request DELETE "/api/v1/machines/${worker}/execs/${exec_id}" \
+    >/dev/null 2>&1 || true
+}
+
+# Report whether one session answer marks the session done.
+serve_session_answer_done() {
+  local answer="$1"
+  local marker='"done"'
+  local text="${answer#*"$marker"}"
+  if [[ "$text" == "$answer" ]]; then
+    return 1
+  fi
+  text="${text#*:}"
+  text="${text#"${text%%[![:space:]]*}"}"
+  [[ "$text" == true* ]]
+}
+
+# Emit one decoded chunk to the stream named by the destination.
+# Record the chunk in the session log when one is set.
+serve_session_emit_b64() {
+  local encoded="$1"
+  local destination="$2"
+  local tmp
+  tmp="$(mktemp "${TMPDIR:-/tmp}/smolvm-session.XXXXXX")" || return 1
+  if ! serve_decode_b64 "$encoded" "$tmp"; then
+    rm -f "$tmp"
+    echo "error: no base64 decoder is on PATH." >&2
+    echo "error: install base64 or openssl." >&2
+    return 1
+  fi
+  if [[ -s "$tmp" ]]; then
+    if [[ -n "$SERVE_SESSION_LOG" ]]; then
+      cat "$tmp" >>"$SERVE_SESSION_LOG" 2>/dev/null || true
+    fi
+    if [[ "$destination" == "stderr" ]]; then
+      cat "$tmp" >&2
+    else
+      cat "$tmp"
+    fi
+  fi
+  rm -f "$tmp"
+  return 0
+}
+
+# Forward one output chunk from a session answer.
+# One chunk names its stream and carries its bytes base64-encoded.
+# The bytes are exact. This path has no lossy fallback.
+serve_session_print_chunk() {
+  local chunk="$1"
+  local stream
+  local encoded
+  stream="$(serve_json_string_field "$chunk" stream)"
+  encoded="$(serve_json_string_field "$chunk" data)"
+  if [[ "$stream" != "stdout" && "$stream" != "stderr" ]]; then
+    return 0
+  fi
+  if [[ -z "$encoded" ]]; then
+    return 0
+  fi
+  serve_session_emit_b64 "$encoded" "$stream" || true
+}
+
+# Print the text of the output array from one session answer.
+# Print nothing when the answer has no output field.
+serve_session_output_text() {
+  local answer="$1"
+  local marker='"output"'
+  local text="${answer#*"$marker"}"
+  if [[ "$text" == "$answer" ]]; then
+    return 0
+  fi
+  text="${text#*:}"
+  text="${text#"${text%%[![:space:]]*}"}"
+  text="${text#[}"
+  text="${text%]}"
+  printf '%s' "$text"
+}
+
+# Print one chunk per line from the output array text.
+serve_session_split_chunks() {
+  local output_text="$1"
+  local separator='},{'
+  if [[ -z "$output_text" ]]; then
+    return 0
+  fi
+  printf '%s\n' "${output_text//"$separator"/$'\n'}"
+}
+
+# Forward the output chunks that one session answer carries.
+# The chunks keep their answer order. Stdout goes to stdout and stderr
+# goes to stderr.
+serve_session_print_output() {
+  local answer="$1"
+  local chunk
+  while IFS= read -r chunk; do
+    [[ -n "$chunk" ]] || continue
+    serve_session_print_chunk "$chunk"
+  done <<<"$(serve_session_split_chunks "$(serve_session_output_text "$answer")")"
+}
+
+# Send one numbered stdin frame to an interactive session.
+# A frame already applied is acknowledged and ignored. Send the same
+# seq again when a try failed.
+# Return 0 when the frame applied. Return 3 when the session takes no
+# stdin. Return 1 on any other failure, with the error lines printed.
+serve_session_send_frame() {
+  local worker="$1"
+  local exec_id="$2"
+  local seq="$3"
+  local encoded="$4"
+  local eof="$5"
+  local body_file
+  local status=""
+  local rc=0
+  local failures=0
+  local body
+
+  body_file="$(mktemp "${TMPDIR:-/tmp}/smolvm-stdin.XXXXXX")" || return 1
+  body="{\"seq\":${seq},\"data\":\"${encoded}\""
+  if [[ "$eof" == "1" ]]; then
+    body+=',"eof":true'
+  fi
+  body+='}'
+
+  while :; do
+    rc=0
+    status="$(serve_request_capture POST \
+      "/api/v1/machines/${worker}/execs/${exec_id}/stdin" \
+      "$body_file" \
+      -H 'content-type: application/json' \
+      -d "$body")" || rc=$?
+    local answer=""
+    if [[ -f "$body_file" ]]; then
+      answer="$(cat "$body_file" 2>/dev/null || true)"
+    fi
+    if ((rc == 0)) && [[ "$status" == 2* ]]; then
+      applied="$(serve_json_number_field "$answer" stdinApplied)"
+      rm -f "$body_file"
+      if [[ -n "$applied" && "$applied" -ge "$seq" ]]; then
+        return 0
+      fi
+    elif ((rc == 0)) && [[ "$status" == "409" ]]; then
+      rm -f "$body_file"
+      return 3
+    elif ((rc == 0)) && [[ "$status" == "413" ]]; then
+      serve_api_error "send stdin frame ${seq}" "$status" "$answer"
+      rm -f "$body_file"
+      return 1
+    fi
+    failures=$((failures + 1))
+    if ((failures >= 3)); then
+      serve_api_error "send stdin frame ${seq}" "$status" "$answer"
+      rm -f "$body_file"
+      return 1
+    fi
+    sleep 1
+  done
+}
+
+# Read one bounded chunk of the local stdin. Print it base64-encoded.
+# Print nothing at the end of the input.
+serve_stdin_chunk_b64() {
+  dd bs=65536 count=1 2>/dev/null | base64 | tr -d '\n'
+}
+
+# Read the whole local stdin for the fallback path.
+# Stop with an error when the input is bigger than one MiB or contains a
+# NUL byte. The fallback path sends one JSON string, not frames.
+# Set SERVE_STDIN_ONESHOT to the data.
+serve_stdin_read_oneshot() {
+  local limit=1048576
+  local size=""
+  local tmp
+  tmp="$(mktemp "${TMPDIR:-/tmp}/smolvm-stdin.XXXXXX")" || return 1
+  if ! head -c $((limit + 1)) >"$tmp" 2>/dev/null; then
+    rm -f "$tmp"
+    echo "error: the local stdin was not read." >&2
+    return 1
+  fi
+  size="$(wc -c <"$tmp" 2>/dev/null)"
+  size="${size//[[:space:]]/}"
+  if [[ ! "$size" =~ ^[0-9]+$ ]]; then
+    rm -f "$tmp"
+    echo "error: the local stdin was not measured." >&2
+    return 1
+  fi
+  if ((size > limit)); then
+    rm -f "$tmp"
+    echo "error: the local stdin is ${size} bytes. The fallback path sends at most ${limit} bytes." >&2
+    echo "error: Use a server with the exec session endpoints." >&2
+    return 1
+  fi
+  if ! cmp -s <(tr -d '\0' <"$tmp") "$tmp"; then
+    rm -f "$tmp"
+    echo "error: the local stdin contains a NUL byte. The fallback path cannot send it." >&2
+    echo "error: Use a server with the exec session endpoints." >&2
+    return 1
+  fi
+  SERVE_STDIN_ONESHOT=""
+  IFS= read -r -d '' SERVE_STDIN_ONESHOT <"$tmp" || true
+  rm -f "$tmp"
+  return 0
+}
+
+# Run one command through an exec session.
+# Start the session once with the fixed exec id. The start answer is
+# the first read. Poll the session with ?after= and a long-poll wait
+# until an answer reports done. Retry a failed call with the same
+# arguments up to three times. Stop when the total run timeout expires.
+# Stop with the gap error when the answer reports lost output.
+# Send the local stdin as numbered frames when the stdin mode is pipe.
+# Delete the session after done and on every failure path.
+# Set SERVE_SESSION_EXIT_CODE to the guest exit code on success.
+# Return 1 on any failure.
+serve_session_exec() {
+  local worker="$1"
+  local exec_id="$2"
+  local body="$3"
+  local stdin_mode="${4:-none}"
+  local body_file
+  local answer=""
+  local status=""
+  local rc=0
+  local cursor=0
+  local next=0
+  local code=""
+  local exit_code=""
+  local session_error=""
+  local now=0
+  local failures=0
+  local done=0
+  local frame_rc=0
+  local next_seq=0
+  local encoded=""
+  local wait=0
+  local applied=0
+
+  SERVE_SESSION_EXIT_CODE=""
+
+  body_file="$(mktemp "${TMPDIR:-/tmp}/smolvm-session.XXXXXX")" || return 1
+
+  # Start the session. A retried start with the same exec id finds the
+  # session that the first start made. The command does not run twice.
+  while :; do
+    rc=0
+    status=""
+    : >"$body_file"
+    status="$(serve_request_capture POST "/api/v1/machines/${worker}/execs" \
+      "$body_file" \
+      -H 'content-type: application/json' \
+      -d "$body")" || rc=$?
+    if ((rc == 0)) && [[ "$status" == 2* ]]; then
+      break
+    fi
+    failures=$((failures + 1))
+    answer=""
+    if [[ -f "$body_file" ]]; then
+      answer="$(cat "$body_file" 2>/dev/null || true)"
+    fi
+    if ((failures >= 3)) || [[ "$status" == "400" || "$status" == "404" || "$status" == "409" ]]; then
+      serve_api_error "start exec session ${exec_id}" "$status" "$answer"
+      rm -f "$body_file"
+      serve_session_delete "$worker" "$exec_id"
+      return 1
+    fi
+    sleep 1
+  done
+  failures=0
+
+  while :; do
+    answer=""
+    if [[ -f "$body_file" ]]; then
+      answer="$(cat "$body_file" 2>/dev/null || true)"
+    fi
+
+    # The reader fell behind and the server no longer holds the output.
+    if serve_json_has_field "$answer" lost; then
+      serve_session_gap_error "$answer"
+      rm -f "$body_file"
+      serve_session_delete "$worker" "$exec_id"
+      return 1
+    fi
+
+    serve_session_print_output "$answer"
+
+    next="$(serve_json_number_field "$answer" next)"
+    if [[ -n "$next" ]]; then
+      cursor="$next"
+    fi
+    code="$(serve_json_number_field "$answer" exitCode)"
+    if [[ -n "$code" ]]; then
+      exit_code="$code"
+    fi
+    if serve_session_answer_done "$answer"; then
+      done=1
+      break
+    fi
+
+    now="$(date +%s)"
+    if ((SERVE_RUN_DEADLINE > 0)) && ((now >= SERVE_RUN_DEADLINE)); then
+      echo "error: the remote run exceeded SMOLVM_SERVE_RUN_TIMEOUT=${SERVE_RUN_TIMEOUT_SECS} seconds." >&2
+      echo "error: Raise the value or make the guest command faster." >&2
+      rm -f "$body_file"
+      serve_session_delete "$worker" "$exec_id"
+      return 1
+    fi
+
+    # Forward the local stdin as numbered frames while it lasts. Read
+    # the output without a wait after each frame. The command can end
+    # while the frames are still coming.
+    if [[ "$stdin_mode" == "pipe" && $done == 0 ]]; then
+      encoded="$(serve_stdin_chunk_b64)"
+      if [[ -z "$encoded" ]]; then
+        # The input ended. Close the session stdin.
+        frame_rc=0
+        serve_session_send_frame "$worker" "$exec_id" "$((next_seq + 1))" "" 1 || frame_rc=$?
+        if ((frame_rc == 1)); then
+          rm -f "$body_file"
+          serve_session_delete "$worker" "$exec_id"
+          return 1
+        fi
+        stdin_mode="sent"
+      else
+        next_seq=$((next_seq + 1))
+        frame_rc=0
+        serve_session_send_frame "$worker" "$exec_id" "$next_seq" "$encoded" 0 || frame_rc=$?
+        if ((frame_rc == 1)); then
+          rm -f "$body_file"
+          serve_session_delete "$worker" "$exec_id"
+          return 1
+        fi
+        if ((frame_rc == 3)); then
+          echo "warning: the guest command closed its stdin early." >&2
+          stdin_mode="sent"
+        fi
+      fi
+    fi
+
+    # Read the session. Retry the same read with the same offset after
+    # one second. Give up after three failed reads in a row.
+    failures=0
+    while :; do
+      rc=0
+      status=""
+      wait="$SERVE_WAIT_SECS"
+      if [[ "$stdin_mode" == "pipe" ]]; then
+        wait=0
+      fi
+      status="$(serve_request_capture GET \
+        "/api/v1/machines/${worker}/execs/${exec_id}?after=${cursor}&wait=${wait}" \
+        "$body_file")" || rc=$?
+      if ((rc == 0)) && [[ "$status" == 2* ]]; then
+        break
+      fi
+      failures=$((failures + 1))
+      answer=""
+      if [[ -f "$body_file" ]]; then
+        answer="$(cat "$body_file" 2>/dev/null || true)"
+      fi
+      if ((failures >= 3)); then
+        serve_api_error "read exec session ${exec_id}" "$status" "$answer"
+        rm -f "$body_file"
+        serve_session_delete "$worker" "$exec_id"
+        return 1
+      fi
+      sleep 1
+    done
+    failures=0
+  done
+
+  rm -f "$body_file"
+  serve_session_delete "$worker" "$exec_id"
+  if [[ -z "$exit_code" ]]; then
+    session_error="$(serve_json_string_field "$answer" error)"
+    if [[ -n "$session_error" ]]; then
+      echo "error: the exec session ended: ${session_error}" >&2
+    else
+      echo "error: the exec session ${exec_id} ended with no exit code." >&2
+    fi
+    return 1
+  fi
+  SERVE_SESSION_EXIT_CODE="$exit_code"
+  return 0
+}
+
+# Print the error for one lost-output answer.
+# The gap names the offsets that the server no longer holds.
+serve_session_gap_error() {
+  local answer="$1"
+  local from
+  local to
+  from="$(serve_json_number_field "$answer" from)"
+  to="$(serve_json_number_field "$answer" to)"
+  echo "error: the session output was lost between offsets ${from:-0} and ${to:-0}." >&2
+  echo "error: The reader fell behind. The run cannot continue." >&2
+}
+
+# Run one session exec for one purpose and stop the run on any failure.
+# Record the session output in one log file when one is named.
+serve_session_run() {
+  local worker="$1"
+  local purpose="$2"
+  local command="$3"
+  local stdin_mode="${4:-none}"
+  local log="${5:-}"
+  local exec_id
+
+  exec_id="$(serve_session_exec_id "$worker" "$purpose")" || return 1
+  if [[ -n "$log" ]]; then
+    : >"$log" || return 1
+    SERVE_SESSION_LOG="$log"
+  fi
+  if ! serve_session_exec "$worker" "$exec_id" \
+    "$(serve_session_body "$exec_id" "$command" "$stdin_mode")" "$stdin_mode"; then
+    SERVE_SESSION_LOG=""
+    return 1
+  fi
+  SERVE_SESSION_LOG=""
+  return 0
+}
+
+# Probe the server for the exec session API with one read-only call.
+# Call the list route on the running machine. A 200 answer turns the
+# session mode on for the whole run. A 404 with an empty or non-JSON
+# body means the route is absent. The session mode turns off and the run
+# uses the stream and buffered paths. Any other answer stops the run with
+# the surfaced error.
+serve_probe_sessions() {
+  local worker="$1"
+  local body_file
+  local status=""
+  local rc=0
+  local body=""
+
+  SERVE_SESSION_MODE=0
+  body_file="$(mktemp "${TMPDIR:-/tmp}/smolvm-probe.XXXXXX")" || return 1
+  status="$(serve_request_capture GET "/api/v1/machines/${worker}/execs" \
+    "$body_file")" || rc=$?
+  if [[ -f "$body_file" ]]; then
+    body="$(cat "$body_file" 2>/dev/null || true)"
+  fi
+  rm -f "$body_file"
+
+  if ((rc == 0)) && [[ "$status" == "200" ]]; then
+    SERVE_SESSION_MODE=1
+    return 0
+  fi
+  if ((rc == 0)) && [[ "$status" == "404" && "$body" != \{* ]]; then
+    echo "warning: the server has no exec session endpoints. The run uses the stream path." >&2
+    return 0
+  fi
+  serve_api_error "probe exec sessions" "$status" "$body"
+  return 1
+}
+
+# Run the readiness exec and check its output for the marker.
+# The session mode uses one exec session. The fallback mode uses the
+# buffered exec endpoint. The log file records the session output.
+# The purpose tag names the exec session. A second readiness check on
+# the same machine needs a new tag because the server refuses an exec
+# id that already ran.
+serve_readiness_check() {
+  local worker="$1"
+  local log="$2"
+  local purpose="${3:-ready}"
+
+  if ((SERVE_SESSION_MODE == 1)); then
+    if ! serve_session_run "$worker" "$purpose" "echo SMOLVM_READY" none "$log"; then
+      return 1
+    fi
+    if ! grep -q SMOLVM_READY "$log"; then
+      echo "error: the workload in the remote machine did not become ready." >&2
+      return 1
+    fi
+    return 0
+  fi
+
+  local response
+  if ! response="$(serve_request_ok "readiness check" POST \
+    "/api/v1/machines/${worker}/exec" \
+    -H 'content-type: application/json' \
+    -d '{"command":["bash","-lc","echo SMOLVM_READY"],"timeoutSecs":'"$SERVE_EXEC_TIMEOUT_SECS"'}')"; then
+    return 1
+  fi
+  if [[ "$response" != *SMOLVM_READY* ]]; then
+    echo "error: the workload in the remote machine did not become ready." >&2
+    return 1
+  fi
+  return 0
+}
+
 # Run one command in a machine on the remote server.
 # Upload the live working tree as an archive before the command runs.
 # Set SERVE_GUEST_RC to the guest exit code on success.
+# The stdin mode names how the caller wants the local stdin handled:
+# none sends nothing, auto streams a pipe through the session path.
 # Return non-zero when an API call fails or a response has no exitCode.
 serve_run_remote() {
   local guest_command="$1"
+  local stdin_mode="${2:-none}"
   local repo_root
   local image="${SMOLVM_SERVE_IMAGE:-debian:stable-slim}"
 
@@ -810,6 +1378,12 @@ serve_run_remote() {
     return 1
   fi
 
+  # The total backstop bounds the remote run from here. It covers the
+  # upload, the init exec, and the guest command.
+  local deadline_now
+  deadline_now="$(date +%s)"
+  SERVE_RUN_DEADLINE=$((deadline_now + SERVE_RUN_TIMEOUT_SECS))
+
   if ! serve_request_ok "check health" GET /health >/dev/null; then
     return 1
   fi
@@ -832,17 +1406,32 @@ serve_run_remote() {
     return 1
   fi
 
-  local response=""
-  if ! response="$(serve_request_ok "readiness check" POST \
-    "/api/v1/machines/${worker}/exec" \
-    -H 'content-type: application/json' \
-    -d '{"command":["bash","-lc","echo SMOLVM_READY"],"timeoutSecs":'"$SERVE_EXEC_TIMEOUT_SECS"'}')"; then
+  # Probe the exec session API with one read-only call. The probe decides
+  # the mode once for the whole run.
+  if ! serve_probe_sessions "$worker"; then
     return 1
   fi
-  if [[ "$response" != *SMOLVM_READY* ]]; then
-    echo "error: the workload in the remote machine did not become ready." >&2
+
+  # Resolve the stdin mode. The session path streams a pipe as numbered
+  # frames. The fallback path sends one bounded string.
+  if [[ "$stdin_mode" == "auto" && -p /dev/stdin ]]; then
+    if ((SERVE_SESSION_MODE == 1)); then
+      stdin_mode="pipe"
+    else
+      if ! serve_stdin_read_oneshot; then
+        return 1
+      fi
+    fi
+  fi
+
+  # Run the readiness exec and check its output for the marker.
+  local ready_log
+  ready_log="$(mktemp "${TMPDIR:-/tmp}/smolvm-ready.XXXXXX")" || return 1
+  if ! serve_readiness_check "$worker" "$ready_log"; then
+    rm -f "$ready_log"
     return 1
   fi
+  rm -f "$ready_log"
 
   if ! serve_request_ok "upload working tree" PUT \
     "/api/v1/machines/${worker}/files/%2Froot%2Fsmolvm-worktree.tar.gz" \
@@ -858,57 +1447,92 @@ serve_run_remote() {
   local init_started=0
   local init_ended=0
 
-  local response=""
-  if ! response="$(serve_request_ok "extract working tree" POST \
-    "/api/v1/machines/${worker}/exec" \
-    -H 'content-type: application/json' \
-    -d '{"command":["bash","-lc","mkdir -p /workspace && tar -xzf /root/smolvm-worktree.tar.gz -C /workspace"],"timeoutSecs":'"$SERVE_EXEC_TIMEOUT_SECS"'}')"; then
-    return 1
-  fi
-  local setup_rc
-  setup_rc="$(serve_exec_rc "$response")"
-  if [[ "$setup_rc" != "0" ]]; then
-    echo "error: the working tree was not extracted in the remote machine." >&2
-    return 1
-  fi
-
-  init_started="$(date +%s)"
-  if ! response="$(serve_request_ok "provision machine" POST \
-    "/api/v1/machines/${worker}/exec" \
-    -H 'content-type: application/json' \
-    -d '{"command":["bash","-lc","bash /workspace/smol/init.sh"],"timeoutSecs":'"$SERVE_EXEC_TIMEOUT_SECS"'}')"; then
-    return 1
-  fi
-  init_ended="$(date +%s)"
-  echo "note: the remote init ran in $((init_ended - init_started)) seconds." >&2
-  serve_print_stream "$response" stdout
-  serve_print_stream "$response" stderr
-  local init_rc
-  init_rc="$(serve_exec_rc "$response")"
-  if [[ "$init_rc" != "0" ]]; then
-    echo "error: the remote machine was not provisioned." >&2
-    return 1
-  fi
-
-  escaped="$(json_escape "$guest_command")"
-  exec_body="{\"command\":[\"bash\",\"-lc\",\"${escaped}\"],\"timeoutSecs\":${SERVE_EXEC_TIMEOUT_SECS}}"
-
-  if serve_stream_exec "$worker" "$exec_body"; then
-    guest_rc="$SERVE_GUEST_RC"
-  else
-    stream_rc=$?
-    if ((stream_rc != 2)); then
+  if ((SERVE_SESSION_MODE == 1)); then
+    # The session path removes the single-request timeout cap from the
+    # extract exec, the init exec, and the guest command.
+    if ! serve_session_run "$worker" extract \
+      "mkdir -p /workspace && tar -xzf /root/smolvm-worktree.tar.gz -C /workspace"; then
       return 1
     fi
-    if ! response="$(serve_request_ok "run command" POST \
+    if [[ "$SERVE_SESSION_EXIT_CODE" != "0" ]]; then
+      echo "error: the working tree was not extracted in the remote machine." >&2
+      return 1
+    fi
+
+    init_started="$(date +%s)"
+    if ! serve_session_run "$worker" init "bash /workspace/smol/init.sh"; then
+      return 1
+    fi
+    init_ended="$(date +%s)"
+    echo "note: the remote init ran in $((init_ended - init_started)) seconds." >&2
+    if [[ "$SERVE_SESSION_EXIT_CODE" != "0" ]]; then
+      echo "error: the remote machine was not provisioned." >&2
+      return 1
+    fi
+  else
+    local response
+    if ! response="$(serve_request_ok "extract working tree" POST \
       "/api/v1/machines/${worker}/exec" \
       -H 'content-type: application/json' \
-      -d "$exec_body")"; then
+      -d '{"command":["bash","-lc","mkdir -p /workspace && tar -xzf /root/smolvm-worktree.tar.gz -C /workspace"],"timeoutSecs":'"$SERVE_EXEC_TIMEOUT_SECS"'}')"; then
       return 1
     fi
+    local setup_rc
+    setup_rc="$(serve_exec_rc "$response")"
+    if [[ "$setup_rc" != "0" ]]; then
+      echo "error: the working tree was not extracted in the remote machine." >&2
+      return 1
+    fi
+
+    init_started="$(date +%s)"
+    if ! response="$(serve_request_ok "provision machine" POST \
+      "/api/v1/machines/${worker}/exec" \
+      -H 'content-type: application/json' \
+      -d '{"command":["bash","-lc","bash /workspace/smol/init.sh"],"timeoutSecs":'"$SERVE_EXEC_TIMEOUT_SECS"'}')"; then
+      return 1
+    fi
+    init_ended="$(date +%s)"
+    echo "note: the remote init ran in $((init_ended - init_started)) seconds." >&2
     serve_print_stream "$response" stdout
     serve_print_stream "$response" stderr
-    guest_rc="$(serve_exec_rc "$response")"
+    local init_rc
+    init_rc="$(serve_exec_rc "$response")"
+    if [[ "$init_rc" != "0" ]]; then
+      echo "error: the remote machine was not provisioned." >&2
+      return 1
+    fi
+  fi
+
+  if ((SERVE_SESSION_MODE == 1)); then
+    if ! serve_session_run "$worker" guest "$guest_command" "$stdin_mode"; then
+      return 1
+    fi
+    guest_rc="$SERVE_SESSION_EXIT_CODE"
+  else
+    escaped="$(json_escape "$guest_command")"
+    exec_body="{\"command\":[\"bash\",\"-lc\",\"${escaped}\"],\"timeoutSecs\":${SERVE_EXEC_TIMEOUT_SECS}"
+    if [[ -n "$SERVE_STDIN_ONESHOT" ]]; then
+      exec_body+=",\"stdin\":\"$(json_escape "$SERVE_STDIN_ONESHOT")\""
+    fi
+    exec_body+='}'
+
+    if serve_stream_exec "$worker" "$exec_body"; then
+      guest_rc="$SERVE_GUEST_RC"
+    else
+      stream_rc=$?
+      if ((stream_rc != 2)); then
+        return 1
+      fi
+      if ! response="$(serve_request_ok "run command" POST \
+        "/api/v1/machines/${worker}/exec" \
+        -H 'content-type: application/json' \
+        -d "$exec_body")"; then
+        return 1
+      fi
+      serve_print_stream "$response" stdout
+      serve_print_stream "$response" stderr
+      guest_rc="$(serve_exec_rc "$response")"
+    fi
   fi
   if [[ -z "$guest_rc" ]]; then
     echo "error: the remote exec response has no exitCode." >&2

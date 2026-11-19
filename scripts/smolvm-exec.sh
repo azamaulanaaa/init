@@ -44,11 +44,12 @@ fi
 
 if [[ -n "${SMOLVM_SERVE_ADDR:-}" ]]; then
   # Run the command in a machine on the remote server. Never use the host.
+  # The auto mode streams a piped local stdin to the guest command.
   # shellcheck source=scripts/smolvm-serve.sh
   source "$script_dir/smolvm-serve.sh"
   echo "exec=$cmd"
   serve_run_remote \
-    "cd /workspace && export SMOLVM_ENABLED=0 SMOLVM_GUEST=1 && $cmd" || exit $?
+    "cd /workspace && export SMOLVM_ENABLED=0 SMOLVM_GUEST=1 && $cmd" auto || exit $?
   exit "$SERVE_GUEST_RC"
 fi
 

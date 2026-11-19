@@ -71,9 +71,10 @@ fi
 
 if [[ -n "${SMOLVM_SERVE_ADDR:-}" ]]; then
   # Run the checks in a machine on the remote server. Never use the host.
+  # The checks path never sends the local stdin.
   # shellcheck source=scripts/smolvm-serve.sh
   source "$script_dir/smolvm-serve.sh"
-  serve_run_remote 'cd /workspace && SMOLVM_ENABLED=0 SMOLVM_GUEST=1 bash scripts/ci.sh' || exit $?
+  serve_run_remote 'cd /workspace && SMOLVM_ENABLED=0 SMOLVM_GUEST=1 bash scripts/ci.sh' none || exit $?
   exit "$SERVE_GUEST_RC"
 fi
 
