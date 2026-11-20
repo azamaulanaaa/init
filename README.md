@@ -24,7 +24,7 @@ prints a warning and runs the checks on the host. Set
 `SMOLVM_ENABLED=1` to require smolvm. The run then fails with exit
 code 3 instead of using the host. The microVM runs
 offline and mounts the repository read-only at `/workspace`. Run
-`make smolvm-verify` to check the isolation. Set `SMOLVM_SERVE_ADDR` to
+`make smolvm-verify` to check the isolation. Set `SMOLVM_ADDR` to
 use a remote `smolvm serve` endpoint instead. The remote path needs
 `curl` and `tar`. It does not use the local CLI and it has no host
 fallback. The client runs every exec in a resumable session on a server
@@ -43,7 +43,7 @@ directory with the run. Remote mode uploads a portable copy of the git
 metadata with the working tree, so the checks can read the git history.
 A worktree pointer is resolved on the host before upload. It leaves out
 `.cache`, so no data comes from the local pack cache. `make smolvm-pack` exits
-non-zero while `SMOLVM_SERVE_ADDR` is set. Unset the variable to build
+non-zero while `SMOLVM_ADDR` is set. Unset the variable to build
 a local pack. With a remote address, `make smolvm-clean` also deletes
 `smolvm-remote-*` machines and the named cache bases on the server.
 The full check run is not verified over HTTP yet. See the
@@ -82,7 +82,7 @@ inside a smolvm microVM. The microVM is offline and mounts the
 repository read-only at `/workspace`. Without them, `make ci` prints a
 warning and runs the checks on the host. Set `SMOLVM_ENABLED=1` to
 require smolvm. The checks then stop with exit code 3 when smolvm
-cannot run. Set `SMOLVM_SERVE_ADDR` to run
+cannot run. Set `SMOLVM_ADDR` to run
 the checks on a remote server. The server has no authentication by
 default. Put it behind an authenticated TLS proxy. Set
 `SMOLVM_SERVE_TOKEN` to send a bearer token. The scripts do not print
@@ -128,7 +128,7 @@ ready. `make smolvm-verify` checks that the isolation holds from
 inside the guest and from the host. `make smolvm` runs the checks
 inside a smolvm microVM against the live working tree.
 `make smolvm-pack` builds the cached pack that the sandbox runs
-from. It refuses to run while `SMOLVM_SERVE_ADDR` is set.
+from. It refuses to run while `SMOLVM_ADDR` is set.
 `make smolvm-clean` removes the cached packs and deletes
 dangling `smolvm-build-*` and `smolvm-run-*` machines. With a remote
 address it also deletes `smolvm-remote-*` machines on the server.
