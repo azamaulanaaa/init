@@ -4,6 +4,20 @@ This document describes the release workflow. The repository uses
 [`Cocogitto`](https://docs.cocogitto.io/) to check commits, write the
 changelog, and bump the version. The command name is `cog`.
 
+## Quick start
+
+Run these commands on `main`:
+
+```bash
+cog bump --dry-run --auto
+make release
+```
+
+The first command shows the next version and changes nothing. The
+second updates `CHANGELOG.md`, creates a version commit, and creates a
+tag with the `v` prefix. See [Make a release](#make-a-release) for the
+full steps.
+
 ## Commit format
 
 Write every commit subject in this form:

@@ -17,50 +17,15 @@ Replace these values before you use this template:
 
 You need `git` and `make`.
 
-`make ci` runs the checks inside a smolvm microVM when `smolvm` is on
-`PATH` and the host accelerator is available: `/dev/kvm` on Linux,
-`kern.hv_support=1` on macOS with Apple Silicon. Without them, it
-prints a warning and runs the checks on the host. Set
-`SMOLVM_ENABLED=1` to require smolvm. The run then fails with exit
-code 3 instead of using the host. The microVM runs
-offline and mounts the repository read-only at `/workspace`. Run
-`make smolvm-verify` to check the isolation. Set `SMOLVM_ADDR` to
-use a remote `smolvm serve` endpoint instead. The remote path needs
-`curl` and `tar`. It does not use the local CLI and it has no host
-fallback. The client runs every exec in a resumable session on a server
-that offers the session endpoints. It falls back to the streaming path
-on an older server. A live run verified the session flow, a streamed
-stdin, and a local-directory upload on `smolvm serve` v1.35.4. The
-streaming flow was verified on v1.33.0. One remote run stops after
-`SMOLVM_SERVE_RUN_TIMEOUT` seconds. The default is 1800. Remote mode
-starts from `SMOLVM_SERVE_IMAGE`, which defaults to
-`debian:stable-slim`. A server with `--cache-disk-dir` and a seeded
-blank base keeps the installed tools in a published base, so
-`smol/init.sh` downloads them only when the base is missing. Without
-one it downloads them on every run. Set `SMOLVM_SERVE_CACHE_SEED` to
-name the seed base. Set `SMOLVM_SERVE_SYNC_DIR` to send one local
-directory with the run. Remote mode uploads a portable copy of the git
-metadata with the working tree, so the checks can read the git history.
-A worktree pointer is resolved on the host before upload. It leaves out
-`.cache`, so no data comes from the local pack cache. `make smolvm-pack` exits
-non-zero while `SMOLVM_ADDR` is set. Unset the variable to build
-a local pack. With a remote address, `make smolvm-clean` also deletes
-`smolvm-remote-*` machines and the named cache bases on the server.
-The full check run is not verified over HTTP yet. See the
-[smolvm documentation](docs/smolvm.md).
+The checks need these tools on `PATH`: `cog`, `dclint`, `dockerfmt`,
+`editorconfig-checker`, `gitleaks`, `hadolint`, `jactionlint`,
+`markdownlint-cli2`, `shellcheck`, `shfmt`, and `zizmor`.
 
-Set `SMOLVM_CPUS` to change the CPU count of the microVM. Set
-`SMOLVM_MEMORY_MB` to change its memory in MiB. The defaults are 1 CPU
-and 512 MiB. Each value must be a positive integer. The local sandbox
-and the remote machine both use these values. The scripts stop when a
-value is not a positive integer.
+If you use [`mise`](https://mise.jdx.dev/), run `mise install`. Then
+activate `mise` in your shell so the tools are on `PATH`.
 
-The checks need `cog`, `dclint`, `dockerfmt`, `editorconfig-checker`,
-`gitleaks`, `hadolint`, `jactionlint`, `markdownlint-cli2`, `shellcheck`,
-`shfmt`, and `zizmor`. If you use [`mise`](https://mise.jdx.dev/), run
-`mise install` to install these tools. Then activate `mise` in your shell so
-the installed tools are on
-`PATH`. The `mise` documentation describes the command for each shell.
+The sandbox needs `smolvm` and a working host accelerator. See
+[Compatibility and limits](#compatibility-and-limits).
 
 ## Setup
 
@@ -133,9 +98,18 @@ from. It refuses to run while `SMOLVM_ADDR` is set.
 dangling `smolvm-build-*` and `smolvm-run-*` machines. With a remote
 address it also deletes `smolvm-remote-*` machines on the server.
 `make smolvm-exec ARGS='...'` runs one command inside the sandbox.
-The [smolvm documentation](docs/smolvm.md) describes the
-requirements, the cache key, the verify step, and the
-`SMOLVM_ENABLED` variable.
+Set `SMOLVM_ADDR` to run the checks on a remote `smolvm serve` server.
+The remote path needs `curl` and `tar`. It has no host fallback. It
+sends the git metadata with the working tree so the checks can read the
+history. `make smolvm-pack` refuses to run while `SMOLVM_ADDR` is set.
+Unset the variable before you build a local pack.
+
+Set `SMOLVM_CPUS` and `SMOLVM_MEMORY_MB` to change the CPU count and
+memory of the machine. The defaults are 1 CPU and 512 MiB. Each value
+must be a positive integer.
+
+The [smolvm documentation](docs/smolvm.md) describes the environment
+variables, the cache key, and the verify step.
 
 ## Format
 
@@ -222,6 +196,27 @@ cog bump --version 0.1.0
 Use `1.0.0` when the public interface is stable. Use `0.1.0` when the
 interface can change.
 
+## Compatibility and limits
+
+The local sandbox ran on Linux x86_64 with KVM and smolvm 1.35.1. The
+remote session flow, a streamed stdin, and a local-directory upload ran
+against `smolvm serve` v1.35.4. The streamed exec path ran against
+v1.33.0. Check each version against your server before you rely on a
+feature.
+
+These paths are not verified:
+
+- The full `make ci` run over HTTP. Live remote runs used
+  `make smolvm-exec`.
+- A successful cache publish and a warm init. The tested Windows server
+  attached a seed base but refused every publish.
+- macOS on Apple Silicon. The detection exists, but the path is
+  untested.
+- The isolation check on a KVM host. `make smolvm-verify` has not
+  printed `result=isolation_held` there yet.
+
+See the [smolvm documentation](docs/smolvm.md) for the full list.
+
 ## Repository layout
 
 - `.github/workflows/ci.yml` defines the check workflow for GitHub
@@ -246,8 +241,8 @@ interface can change.
   to add a check.
 - The [release workflow](docs/release.md) describes the commit format
   and the release steps.
-- The [smolvm](docs/smolvm.md) describes the smolvm microVM,
-  the pack cache, and the verified flow.
+- The [smolvm](docs/smolvm.md) describes the sandbox settings,
+  the pack cache, and the known limits.
 
 ## License
 
