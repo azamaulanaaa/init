@@ -94,9 +94,17 @@ inside the guest and from the host. `make smolvm` runs the checks
 inside a smolvm microVM against the live working tree.
 `make smolvm-pack` builds the cached pack that the sandbox runs
 from. It refuses to run while `SMOLVM_ADDR` is set.
-`make smolvm-clean` removes the cached packs and deletes
-dangling `smolvm-build-*` and `smolvm-run-*` machines. With a remote
-address it also deletes `smolvm-remote-*` machines on the server.
+`make smolvm-clean` removes the cached packs and deletes the dangling
+machines of this checkout. Every resource name carries an owner token
+from the canonical checkout path: `smolvm-build-<owner>-<hash>`,
+`smolvm-run-<owner>-*`, and `smolvm-remote-<owner>-*`. With a remote
+address it also deletes `smolvm-ci-<owner>-<key>.qcow2` cache bases on
+the server. The target prints the plan and asks one time. Use
+`--dry-run` to print the plan only, or `--yes` to skip the prompt. Set
+`SMOLVM_CLEAN_ASSUME_YES=1` to skip the prompt too. A non-interactive
+run without a skip flag stops with an error. Machines and bases of
+another checkout stay. A moved checkout gets a new token, so its old
+resources become foreign and are reported, not deleted.
 `make smolvm-exec ARGS='...'` runs one command inside the sandbox.
 Set `SMOLVM_ADDR` to run the checks on a remote `smolvm serve` server.
 The remote path needs `curl` and `tar`. It has no host fallback. It
