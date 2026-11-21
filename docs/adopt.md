@@ -19,6 +19,7 @@ checks, the hooks, the CI jobs, and the release flow.
 | CI checks | `.github/workflows/ci.yml` | Runs the same checks on GitHub. |
 | Release | `cog.toml`, `release.yml` | Creates the changelog and a tag. |
 | Sandbox | `scripts/smolvm*.sh`, `smol/` | Runs the checks in a microVM. |
+| Python | `scripts/check-python*.sh` | Runs the Python checks through `uv`. |
 
 ## Before you start
 
@@ -61,7 +62,8 @@ You need these items:
 The selected checks need `shellcheck`, `shfmt`, `cog`,
 `markdownlint-cli2`, `editorconfig-checker`, `gitleaks`,
 `jactionlint`, `zizmor`, `hadolint`, `dockerfmt`, and `dclint` on
-`PATH`. The `mise` check also needs `mise`.
+`PATH`. The `mise` check also needs `mise`. The Python add-on needs
+`python`, `uv`, and network access for the audit.
 
 If you use `mise`, run `mise install`. Then activate `mise` in your
 shell so the tools are on `PATH`.
@@ -155,8 +157,9 @@ Add the `.PHONY` list from the staged Makefile:
   smolvm-preflight smolvm-verify check-jactionlint check-bash \
   check-commits check-dclint check-dockerfmt check-editorconfig \
   check-gitleaks check-hadolint check-markdown check-mise \
-  check-shfmt check-zizmor format format-shfmt format-dockerfmt \
-  format-dclint hooks release
+  check-python check-python-audit check-shfmt check-zizmor \
+  format format-shfmt format-dockerfmt format-dclint format-python \
+  hooks release
 ```
 
 The committed file has this list on one line. A line continuation also
@@ -182,12 +185,15 @@ Add the targets:
 | `check-hadolint` | `scripts/check-hadolint.sh` |
 | `check-markdown` | `scripts/check-markdown.sh` |
 | `check-mise` | `scripts/check-mise.sh` |
+| `check-python` | `scripts/check-python.sh` |
+| `check-python-audit` | `scripts/check-python-audit.sh` |
 | `check-shfmt` | `scripts/check-shfmt.sh` |
 | `check-zizmor` | `scripts/check-zizmor.sh` |
 | `format` | `scripts/format.sh` |
 | `format-shfmt` | `scripts/format-shfmt.sh` |
 | `format-dockerfmt` | `scripts/format-dockerfmt.sh` |
 | `format-dclint` | `scripts/format-dclint.sh` |
+| `format-python` | `scripts/format-python.sh` |
 | `hooks` | Sets the hook path and the file modes. |
 | `release` | `scripts/release.sh $(ARGS)` |
 | `smolvm` | `scripts/smolvm.sh` |
@@ -223,12 +229,18 @@ Keep one help target and one default goal.
 | `dockerfmt` | `dockerfmt` | Keep with `hadolint`. |
 | `dclint` | `dclint` | Keep for Compose files. |
 | `mise` | `mise` | Keep for `mise.toml`. |
+| `python` | `uv` | Keep for Python files and a `pyproject.toml`. |
+| `python-audit` | `uv` | Keep with `python`. Needs network. |
 
 Keep `bash` when the repository has `*.sh`, `*.bash`, `*.bats`, or a
 file with a `bash` or `sh` shebang. Keep `markdown` when the repository
 has Markdown files. The check skips `CHANGELOG.md`. Keep `jactionlint`
 when the repository has `.github/workflows/*.yml` or `*.yaml`. The
-`mise` check skips when `mise` is absent.
+`mise` check skips when `mise` is absent. Keep `python` when the
+repository has Python files and a `pyproject.toml`. The check skips
+when `uv` or `pyproject.toml` is absent. Keep `python-audit` with
+`python`. The audit needs network access. See
+[Python and uv add-on](#python-and-uv-add-on).
 
 Delete a check script that you do not need. `scripts/ci.sh` runs every
 `scripts/check-*.sh` in name order. The script file is the only
@@ -562,11 +574,17 @@ is unavailable. Set `SMOLVM_ENABLED=0` to force the host path.
 | `mise.toml` | merge | Add the selected tools. |
 | `scripts/ci.sh` | copy | Runs the check scripts. |
 | `scripts/check-*.sh` | copy selected | Copy the Phase 3 checks. |
+| `scripts/check-python.sh` | copy | Runs `ruff`, `mypy`, and `pytest`. |
+| `scripts/check-python-audit.sh` | copy | Runs `pip-audit`. Needs network. |
 | `scripts/format*.sh` | copy selected | Copy `format.sh` and pairs. |
+| `scripts/format-python.sh` | copy | Applies the `ruff` fixes and format. |
 | `scripts/release.sh` | copy | Host release orchestrator. |
 | `scripts/release-guest.sh` | copy | Guest release worker. |
 | `scripts/smolvm*.sh` | optional | Copy the five files. |
 | `smol/*` | optional | Copy the five smol files. |
+| `pyproject.toml` | adapt | Merge an existing file. Declares the dev tools. |
+| `src/calculator.py` | adapt | Example module. Use your package layout. |
+| `tests/test_calculator.py` | adapt | Example test. Use your test path. |
 | `.gitignore` | merge | Add `.cache/` and `.smolvm/`. |
 | `README.md`, `LICENSE`, `docs/*` | do not copy | Write your own. |
 | `.cache/`, `.smolvm/` | do not copy | Add both to `.gitignore`. |
@@ -588,7 +606,17 @@ That file sources the resources file. Host mode needs neither.
 
     A check exits non-zero on a problem.
 
-2. Force the host path first:
+2. Check the Python add-on when you copied it. Use network access:
+
+    ```bash
+    make check-python
+    make check-python-audit
+    ```
+
+    The audit downloads the vulnerability database. It fails without
+    network access.
+
+3. Force the host path first:
 
     ```bash
     SMOLVM_ENABLED=0 make ci
@@ -597,23 +625,24 @@ That file sources the resources file. Host mode needs neither.
     This command skips the microVM detection. It prints no warning. It
     shows whether the tools and the files pass on the host.
 
-3. Apply the formatters, then review the diff:
+4. Apply the formatters, then review the diff:
 
     ```bash
     make format
+    make format-python
     git diff --stat
     git diff
     ```
 
     The formatters change files. Review every change before you commit.
 
-4. Install the hooks:
+5. Install the hooks:
 
     ```bash
     make hooks
     ```
 
-5. Make one test commit. The commit-msg hook runs `cog verify`. The
+6. Make one test commit. The commit-msg hook runs `cog verify`. The
     pre-commit hook runs `scripts/ci.sh`:
 
     ```bash
@@ -623,7 +652,7 @@ That file sources the resources file. Host mode needs neither.
     Delete the test commit with `git reset --soft HEAD~1` when you do not
     want it.
 
-6. Optional sandbox check:
+7. Optional sandbox check:
 
     ```bash
     make smolvm-preflight
@@ -632,7 +661,7 @@ That file sources the resources file. Host mode needs neither.
     make smolvm-verify
     ```
 
-7. Optional remote check. Use your server address and a unique owner:
+8. Optional remote check. Use your server address and a unique owner:
 
     ```bash
     SMOLVM_OWNER=my-repo SMOLVM_ADDR=https://smolvm.example.com make smolvm
@@ -796,6 +825,171 @@ SHELL := bash
 
 The recipes use bash syntax. Without the header, `make` uses `/bin/sh`.
 
+### The Python check skips or the audit fails
+
+`make check-python` prints a skip message and exits 0 when `uv` is
+absent. Install `uv` with `mise install`. Check the version:
+
+```bash
+uv --version
+```
+
+The check also skips when `pyproject.toml` is absent. Put that file at
+the repository root.
+
+`make check-python-audit` needs network access to download the
+vulnerability database. Run it on the host or on the remote
+`SMOLVM_ADDR` path. The local smolvm guest is offline. The audit cannot
+run there.
+
+## Python and uv add-on
+
+This add-on gives an existing repository a minimal Python project. The
+project holds one module and one test. It also adds three check targets.
+
+`mise.toml` declares the Python runtime and `uv`. `pyproject.toml`
+declares `pytest`, `ruff`, and `mypy` as development tools. `uv` reads
+that file and installs the tools in the check environment. Do not
+install the tools on the host.
+
+### Copy or adapt the files
+
+Copy these files from the staging directory:
+
+```bash
+cp -p /tmp/template/pyproject.toml pyproject.toml
+mkdir -p src tests
+cp -p /tmp/template/src/calculator.py src/calculator.py
+cp -p /tmp/template/tests/test_calculator.py tests/test_calculator.py
+cp -p /tmp/template/scripts/check-python.sh scripts/check-python.sh
+cp -p /tmp/template/scripts/check-python-audit.sh scripts/check-python-audit.sh
+cp -p /tmp/template/scripts/format-python.sh scripts/format-python.sh
+```
+
+The starter files are an example. Adapt `src/calculator.py` and
+`tests/test_calculator.py` to your package layout and your test path.
+Update `pythonpath` in the `[tool.pytest.ini_options]` table and
+`mypy_path` in the `[tool.mypy]` table at the same time.
+
+Do not overwrite an existing `pyproject.toml`. Merge the
+`[dependency-groups]` entry, the `[tool.uv]` table, and the tool tables
+into your file.
+
+### Add the Makefile targets
+
+Add these targets to the Makefile:
+
+| Target | Recipe |
+| --- | --- |
+| `check-python` | `scripts/check-python.sh` |
+| `check-python-audit` | `scripts/check-python-audit.sh` |
+| `format-python` | `scripts/format-python.sh` |
+
+Add the three names to `.PHONY`.
+
+### Declare the tools in mise.toml
+
+Add these entries to the `[tools]` table:
+
+```toml
+python = "3.13"
+uv = "0.13"
+```
+
+Run `mise install` so both tools are on `PATH`.
+
+### Add the CI entries
+
+Add these matrix entries to `.github/workflows/ci.yml`:
+
+```yaml
+- name: python
+  install_args: "python uv"
+  script: scripts/check-python.sh
+- name: python-audit
+  install_args: "python uv"
+  script: scripts/check-python-audit.sh
+```
+
+Add `python` and `python-audit` to the required status checks in the
+repository settings.
+
+### Ignore the generated files
+
+Add these lines to `.gitignore`:
+
+```text
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.pyc
+```
+
+### Exclude the generated files from the remote upload
+
+`scripts/smolvm-serve.sh` copies the worktree to a remote server in
+`serve_run_remote`. Add these flags to the worktree `tar` command:
+
+```text
+--exclude=.venv --exclude=__pycache__ \
+--exclude=.pytest_cache --exclude=.ruff_cache
+```
+
+### What the checks do
+
+`scripts/check-python.sh` runs these commands:
+
+```bash
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy src tests
+uv run pytest
+```
+
+The script prints a skip message and exits 0 when `uv` or
+`pyproject.toml` is absent. Change `src tests` when your package layout
+differs.
+
+`scripts/check-python-audit.sh` runs this command:
+
+```bash
+uv run --with pip-audit pip-audit
+```
+
+The script also skips when `uv` or `pyproject.toml` is absent.
+
+`scripts/format-python.sh` runs `uv run ruff check --fix .` and
+`uv run ruff format .`.
+
+### Network access
+
+`pip-audit` needs network access to download the vulnerability
+database.
+`uv run` may also need network access when the development tools are
+not in the cache.
+
+The remote `SMOLVM_ADDR` path has network access. The local smolvm
+guest is offline. It cannot run the audit. Run the audit on the host or
+on the remote path.
+
+### Run the Python checks
+
+Run these commands with network access:
+
+```bash
+make check-python
+make check-python-audit
+```
+
+Apply the formatter, then review the diff:
+
+```bash
+make format-python
+git diff --stat
+git diff
+```
+
 ## Limits
 
 - This guide does not rewrite history. Old commits stay as they are.
@@ -804,3 +998,7 @@ The recipes use bash syntax. Without the header, `make` uses `/bin/sh`.
 - It does not cover uncommitted files. Commit or stash your work first.
 - The smolvm guest is offline. The guest mounts the repository read-only.
   A check that needs network access or a write fails in the guest.
+- The Python audit needs network access to download the vulnerability
+  database. The local smolvm guest cannot run the audit. The remote
+  `SMOLVM_ADDR` path has network access. `uv run` may also need network
+  access when the development tools are not in the cache.
