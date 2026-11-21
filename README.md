@@ -13,6 +13,9 @@ Replace these values before you use this template:
   default branch name.
 - The copyright holder in `LICENSE` and `README.md`. Use your name.
 
+To add this harness to an existing repository, see
+[Adopt the harness](docs/adopt.md).
+
 ## Requirements
 
 You need `git` and `make`.

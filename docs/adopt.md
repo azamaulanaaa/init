@@ -1,0 +1,776 @@
+# Adopt the harness
+
+## Purpose and audience
+
+This guide adds the harness to an existing repository. You keep your
+layout and your history. The guide copies files and merges settings. It
+does not replace your files without a review.
+
+Read this guide when you maintain an existing repository and want the
+checks, the hooks, the CI jobs, and the release flow.
+
+## What you get
+
+| Feature | Entry point | What it does |
+| --- | --- | --- |
+| Checks | `scripts/ci.sh` | Runs every check. |
+| Formatters | `scripts/format.sh` | Applies every formatter. |
+| Git hooks | `.githook/` | Checks the message and runs the checks. |
+| CI checks | `.github/workflows/ci.yml` | Runs the same checks on GitHub. |
+| Release | `cog.toml`, `release.yml` | Creates the changelog and a tag. |
+| Sandbox | `scripts/smolvm*.sh`, `smol/` | Runs the checks in a microVM. |
+
+## Before you start
+
+Work on a branch:
+
+```bash
+git switch -c adopt-harness
+```
+
+Start from a clean tree. This command must print no lines:
+
+```bash
+git status --short
+```
+
+Save a copy of each file that you will merge:
+
+```bash
+cp -p Makefile Makefile.before-adopt
+cp -p mise.toml mise.toml.before-adopt
+cp -p .gitignore .gitignore.before-adopt
+cp -p .editorconfig .editorconfig.before-adopt
+cp -p cog.toml cog.toml.before-adopt
+cp -p .github/workflows/ci.yml .github/workflows/ci.yml.before-adopt
+```
+
+These commands fail when a file is absent. Skip the missing file. A
+missing file is not a problem.
+
+The harness needs these items:
+
+| Requirement | Need | Notes |
+| --- | --- | --- |
+| `git` | required | The hooks and the checks use it. |
+| `make` | required | The targets call the scripts. |
+| `mise` | optional | Installs the tools from `mise.toml`. |
+| `smolvm` and an accelerator | optional | Sandbox only. See Phase 7. |
+| The check tools | required | The tools for the checks you select. |
+
+The selected checks need `shellcheck`, `shfmt`, `cog`,
+`markdownlint-cli2`, `editorconfig-checker`, `gitleaks`,
+`jactionlint`, `zizmor`, `hadolint`, `dockerfmt`, and `dclint` on
+`PATH`. The `mise` check also needs `mise`.
+
+If you use `mise`, run `mise install`. Then activate `mise` in your
+shell so the tools are on `PATH`.
+
+### Platform
+
+The check scripts need bash 4 or later because they use `mapfile`.
+The gitleaks check uses GNU `cp --parents`. On macOS, provide GNU
+coreutils on `PATH`, or adapt the copy step. The check pipeline is
+tested on Linux. The smolvm macOS path is not tested.
+
+## Adoption phases
+
+Each phase is independent. Stop after any phase and the repository
+still works.
+
+### Phase 1: Copy the check pipeline
+
+Clone this repository to a staging directory:
+
+```bash
+git clone https://github.com/azamaulanaaa/init.git /tmp/harness
+```
+
+Run these commands from your repository root:
+
+```bash
+mkdir -p scripts
+cp -p /tmp/harness/scripts/ci.sh scripts/ci.sh
+cp -p /tmp/harness/scripts/format.sh scripts/format.sh
+cp -p /tmp/harness/scripts/check-bash.sh scripts/check-bash.sh
+cp -p /tmp/harness/scripts/check-markdown.sh scripts/check-markdown.sh
+cp -p /tmp/harness/scripts/format-shfmt.sh scripts/format-shfmt.sh
+```
+
+These five files are examples. Copy `ci.sh` for the pipeline. Copy
+`format.sh` for the formatters. Replace the two check names and the
+format name with your selection from Phase 3.
+
+`cp -p` keeps the file mode. A copied script stays executable. Confirm
+the two entry points:
+
+```bash
+test -x scripts/ci.sh
+test -x scripts/format.sh
+```
+
+`scripts/ci.sh` runs every `scripts/check-*.sh` in name order. It prints
+`run: <script>` before each check. It stops when a check fails.
+
+`scripts/format.sh` runs every `scripts/format-*.sh` in name order. It
+stops when a formatter fails.
+
+`scripts/ci.sh` can call `scripts/smolvm.sh`. It does this when
+`SMOLVM_ENABLED` is not `0` and either `SMOLVM_ADDR` is set or smolvm
+and the accelerator are available. Phase 1 does not copy
+`scripts/smolvm.sh`. A host with smolvm and a working accelerator can
+therefore fail at `make ci` when you skip Phase 7. `SMOLVM_ADDR`
+triggers the same handoff. Choose one option:
+
+- Copy `scripts/smolvm.sh` and its helper files from Phase 7.
+- Edit `scripts/ci.sh` to remove the smolvm handoff.
+- Run every check with `SMOLVM_ENABLED=0`. For example:
+
+  ```bash
+  SMOLVM_ENABLED=0 make ci
+  ```
+
+Take one option and the phase still works on its own.
+
+### Phase 2: Merge the Makefile
+
+Do not overwrite an existing Makefile. Open the staged
+`/tmp/harness/Makefile` and merge it.
+
+Add the header first:
+
+```make
+SHELL := bash
+.DEFAULT_GOAL := help
+```
+
+`SHELL := bash` makes each recipe use bash. Without it, `make` uses
+`/bin/sh`.
+
+Add the `.PHONY` list from the staged Makefile:
+
+```make
+.PHONY: help ci smolvm smolvm-pack smolvm-clean smolvm-exec \
+  smolvm-preflight smolvm-verify check-jactionlint check-bash \
+  check-commits check-dclint check-dockerfmt check-editorconfig \
+  check-gitleaks check-hadolint check-markdown check-mise \
+  check-shfmt check-zizmor format format-shfmt format-dockerfmt \
+  format-dclint hooks release
+```
+
+The committed file has this list on one line. A line continuation also
+works.
+
+Add your existing target names to the list, or add a second `.PHONY`
+line. A target that is not in the list still runs. The list only stops
+a name clash with a file.
+
+Add the targets:
+
+| Target | Recipe |
+| --- | --- |
+| `help` | Prints every target that has a `##` comment. |
+| `ci` | `scripts/ci.sh` |
+| `check-jactionlint` | `scripts/check-jactionlint.sh` |
+| `check-bash` | `scripts/check-bash.sh` |
+| `check-commits` | `scripts/check-commits.sh` |
+| `check-dclint` | `scripts/check-dclint.sh` |
+| `check-dockerfmt` | `scripts/check-dockerfmt.sh` |
+| `check-editorconfig` | `scripts/check-editorconfig.sh` |
+| `check-gitleaks` | `scripts/check-gitleaks.sh` |
+| `check-hadolint` | `scripts/check-hadolint.sh` |
+| `check-markdown` | `scripts/check-markdown.sh` |
+| `check-mise` | `scripts/check-mise.sh` |
+| `check-shfmt` | `scripts/check-shfmt.sh` |
+| `check-zizmor` | `scripts/check-zizmor.sh` |
+| `format` | `scripts/format.sh` |
+| `format-shfmt` | `scripts/format-shfmt.sh` |
+| `format-dockerfmt` | `scripts/format-dockerfmt.sh` |
+| `format-dclint` | `scripts/format-dclint.sh` |
+| `hooks` | Sets the hook path and the file modes. |
+| `release` | `cog bump --auto` |
+| `smolvm` | `scripts/smolvm.sh` |
+| `smolvm-pack` | `smol/pack-build.sh` |
+| `smolvm-clean` | `scripts/smolvm-clean.sh $(ARGS)` |
+| `smolvm-exec` | `@scripts/smolvm-exec.sh "$(ARGS)"` |
+| `smolvm-preflight` | `smol/preflight.sh` |
+| `smolvm-verify` | `smol/verify.sh` |
+
+Remove the targets for the checks and the sandbox files that you do not
+copy.
+
+The `help` target reads the `##` comment on each target. The staged
+Makefile has the exact recipe. A recipe line starts with a tab. A line
+with spaces fails.
+
+The `help` target may need a merge if the repository already has one.
+Keep one help target and one default goal.
+
+### Phase 3: Select the checks
+
+| Check | Tool | When to keep it |
+| --- | --- | --- |
+| `bash` | `shellcheck` | Keep for bash or sh files. |
+| `shfmt` | `shfmt` | Keep for bash formatting. |
+| `commits` | `cog` | Keep for Conventional Commits. |
+| `markdown` | `markdownlint-cli2` | Keep for Markdown files. |
+| `editorconfig` | `editorconfig-checker` | Keep for an `.editorconfig`. |
+| `gitleaks` | `gitleaks` | Keep in most repositories. |
+| `jactionlint` | `jactionlint` | Keep for workflow files. |
+| `zizmor` | `zizmor` | Keep with `jactionlint`. |
+| `hadolint` | `hadolint` | Keep for Dockerfiles. |
+| `dockerfmt` | `dockerfmt` | Keep with `hadolint`. |
+| `dclint` | `dclint` | Keep for Compose files. |
+| `mise` | `mise` | Keep for `mise.toml`. |
+
+Keep `bash` when the repository has `*.sh`, `*.bash`, `*.bats`, or a
+file with a `bash` or `sh` shebang. Keep `markdown` when the repository
+has Markdown files. The check skips `CHANGELOG.md`. Keep `jactionlint`
+when the repository has `.github/workflows/*.yml` or `*.yaml`. The
+`mise` check skips when `mise` is absent.
+
+Remove a check script that you do not need. `scripts/ci.sh` runs every
+`scripts/check-*.sh` in name order. The script file is the only
+registration.
+
+A format script pairs with its check. Copy `format-shfmt.sh` with
+`check-shfmt.sh`, `format-dockerfmt.sh` with `check-dockerfmt.sh`, and
+`format-dclint.sh` with `check-dclint.sh`.
+
+Some checks print `no ... files` and exit 0 when no file matches. Keep
+the check when the repository can gain such a file later.
+
+### Phase 4: Install the hooks
+
+Run this command:
+
+```bash
+make hooks
+```
+
+The target sets `core.hooksPath` to `.githook`. It also makes the three
+hook files executable. Confirm the value:
+
+```bash
+git config --get core.hooksPath
+```
+
+The output must be `.githook`. The setting is local to the clone. Each
+clone must run `make hooks`.
+
+`make hooks` replaces any existing hook path. Do not run it when the
+repository uses Husky, lefthook, or the pre-commit framework. Call the
+harness from the existing hooks instead.
+
+Add this command to the existing pre-commit hook and the existing
+pre-push hook:
+
+```sh
+#!/bin/sh
+exec scripts/ci.sh
+```
+
+Add this command to the existing commit-msg hook:
+
+```sh
+#!/bin/sh
+exec cog verify --file "$1"
+```
+
+The `pre-commit` and `pre-push` hooks run the full pipeline. A commit
+waits for every check. The wait can be long on a large repository.
+
+The committed hooks also change to the repository root first. Keep that
+step when your hook tool starts in another directory.
+
+### Phase 5: Add CI
+
+Copy `.github/workflows/ci.yml` and adapt it.
+
+1. Change the `push.branches` list. The committed list is `main` and
+    `feature/**`. Use your default branch and your branch patterns.
+2. Remove each matrix entry for a check that you dropped.
+3. Keep or replace the pinned actions and the `jdxcode/mise` container.
+    Each action uses a commit SHA. Each image uses a digest. Keep the
+    version comment on each pin.
+4. Keep `fetch-depth: 0` on the `commits` checkout step. The commit
+    check reads the full history.
+5. Keep the `safe.directory` step. The container user differs from the
+    checkout owner.
+6. Keep `permissions: contents: read`.
+
+A matrix entry has this shape:
+
+```yaml
+- name: bash
+  install_args: shellcheck
+  script: scripts/check-bash.sh
+```
+
+The `mise` entry uses `install_args: ''` because it needs no tool.
+
+The committed workflow runs on a push to `main` and `feature/**`, on
+each pull request, on demand, and every Monday at 03:00 UTC. Change or
+remove the triggers.
+
+The workflow also has four separate jobs:
+
+| Job | When it runs | What it does |
+| --- | --- | --- |
+| `pr-title` | pull requests | Checks the title. |
+| `gitleaks` | every run | Runs the secret scan. |
+| `editorconfig` | every run | Runs the editorconfig check. |
+| `dependency-review` | pull requests | Reviews dependencies. |
+
+The `gitleaks` job installs `gitleaks` with `mise install gitleaks`.
+The `editorconfig` job installs `editorconfig-checker` with
+`mise install editorconfig-checker`. A private repository needs GitHub
+Advanced Security for `dependency-review`.
+
+`.github/dependabot.yml` is optional. Copy it to keep the pinned action
+SHAs current. It updates the `github-actions` ecosystem every week and
+groups the updates.
+
+Set the job names that you keep as required status checks in the
+repository settings.
+
+### Phase 6: Add the release flow
+
+Copy `cog.toml` and adapt it:
+
+```toml
+from_latest_tag = true
+ignore_merge_commits = true
+tag_prefix = "v"
+branch_whitelist = ["main"]
+
+[changelog]
+path = "CHANGELOG.md"
+template = "default"
+```
+
+- `branch_whitelist` lists the branches that permit a bump. Change
+  `main` to your release branch.
+- `tag_prefix` is `v`. Tags have the form `v1.2.3`.
+- `from_latest_tag = true` computes the next version and the changelog
+  from the latest tag.
+- `ignore_merge_commits = true` leaves merge commits out.
+- `[changelog]` sets the path to `CHANGELOG.md` and the default
+  template.
+
+Run the release on the branch in `branch_whitelist`:
+
+```bash
+make release
+```
+
+The target runs `cog bump --auto`. It does three steps:
+
+1. It updates `CHANGELOG.md`.
+2. It creates a version commit.
+3. It creates a tag with the `v` prefix.
+
+Do not edit `CHANGELOG.md` by hand.
+
+`.github/workflows/release.yml` runs on a push of a `v*` tag. It creates
+a GitHub Release. A local tag does not start the workflow. Push the tag
+only when you want the release:
+
+```bash
+git push origin v1.2.3
+```
+
+The release flow needs Conventional Commits. Use the form
+`<type>(<scope>): <description>`. The types are `feat`, `fix`, `docs`,
+`test`, `refactor`, `perf`, `build`, `ci`, and `chore`. A `fix` bumps
+PATCH. A `feat` bumps MINOR. A `!` or a `BREAKING CHANGE:` footer bumps
+MAJOR.
+
+When the existing history does not follow Conventional Commits, do not
+enable the commit check and the commit-msg hook yet. Keep
+`scripts/check-commits.sh` and `.githook/commit-msg` out of the first
+adoption commit. Add them after the history can pass.
+
+When the history follows Conventional Commits and has no tag, create a
+local baseline tag at the adoption commit:
+
+```bash
+git tag v0.0.0
+```
+
+Do not push the tag. The release workflow does not run. The tag gives
+`cog` a start point. `scripts/check-commits.sh` then checks only the
+commits after the tag.
+
+`cog bump --auto` never jumps from `0.y.z` to `1.0.0`. Select the first
+stable version with an explicit command:
+
+```bash
+cog bump --version 1.0.0
+```
+
+Run this command to see the next version without a change:
+
+```bash
+cog bump --dry-run --auto
+```
+
+### Phase 7: Optional smolvm sandbox
+
+Copy the sandbox files:
+
+```bash
+cp -p /tmp/harness/scripts/smolvm.sh scripts/smolvm.sh
+cp -p /tmp/harness/scripts/smolvm-clean.sh scripts/smolvm-clean.sh
+cp -p /tmp/harness/scripts/smolvm-exec.sh scripts/smolvm-exec.sh
+cp -p /tmp/harness/scripts/smolvm-resources.sh scripts/smolvm-resources.sh
+cp -p /tmp/harness/scripts/smolvm-serve.sh scripts/smolvm-serve.sh
+mkdir -p smol
+cp -p /tmp/harness/smol/base.smolfile smol/base.smolfile
+cp -p /tmp/harness/smol/init.sh smol/init.sh
+cp -p /tmp/harness/smol/pack-build.sh smol/pack-build.sh
+cp -p /tmp/harness/smol/preflight.sh smol/preflight.sh
+cp -p /tmp/harness/smol/verify.sh smol/verify.sh
+```
+
+Copy the five `scripts/smolvm*.sh` files together. `smolvm.sh` sources
+`smolvm-resources.sh` and `smolvm-serve.sh` from the same directory.
+
+The host needs one of these setups:
+
+- Linux x86_64 or aarch64 with a readable `/dev/kvm`. A cloud instance
+  or a virtual machine needs nested virtualization.
+- macOS 11 or later on Apple Silicon with `kern.hv_support=1`. The
+  macOS path is not tested in this repository.
+
+The host also needs `smolvm`, `git`, `make`, `sha256sum`, and `bash`.
+Install `smolvm` with the vendor script:
+
+```bash
+curl -sSL https://smolmachines.com/install.sh | bash
+```
+
+Run these commands in order:
+
+```bash
+make smolvm-preflight
+make smolvm-pack
+make smolvm
+make smolvm-verify
+```
+
+`make smolvm-preflight` reads the host and starts no machine.
+`make smolvm-pack` builds the cached pack. `make smolvm` runs the checks
+in the guest. `make smolvm-verify` checks the isolation from inside the
+guest and from the host.
+
+The guest is offline. It runs a baked pack and asks the registry for
+nothing. The repository is mounted at `/workspace` with the `:ro` flag.
+The guest kernel enforces the read-only mount. A check that needs
+network access fails in the guest. Fix the check or run it on the host.
+The committed check rules do not use the network.
+
+`smol/init.sh` and `mise.toml` must provide every tool. The init script
+installs `bash`, `ca-certificates`, `curl`, `git`, and `mise`. It then
+runs `mise install` against your `mise.toml`. Add a tool to `mise.toml`
+and the next pack build installs it.
+
+The pack cache is `.cache/smolvm/ci-<key>.smolmachine`. The key is the
+SHA-256 of the `sha256sum` lines of `mise.toml`, every
+`smol/*.smolfile`, `smol/pack-build.sh`, and `smol/init.sh`. The key
+also includes `SMOLVM_CPUS` and `SMOLVM_MEMORY_MB` when either value
+differs from its default. A change to one of these files or values
+builds a new pack.
+
+`SMOLVM_CPUS` sets the CPU count. `SMOLVM_MEMORY_MB` sets the memory in
+MiB. The defaults are 1 CPU and 512 MiB. Each value must be a positive
+integer.
+
+Set `SMOLVM_ADDR` to use a remote `smolvm serve` server. The remote
+path needs `curl` and `tar`. It has no host fallback. The client copies
+the working tree and the git metadata to the server. The server has no
+authentication by default. Bind it to loopback or a protected Unix
+socket. Put a remote server behind an authenticated TLS proxy. Anyone
+who can call the API can create machines and run commands.
+`SMOLVM_SERVE_TOKEN` sends a bearer token. The scripts do not print the
+token.
+
+`make smolvm-pack` refuses to run while `SMOLVM_ADDR` is set. Unset the
+variable before you build a local pack.
+
+`make smolvm-clean` removes the cached packs and the machines of this
+checkout. Every resource name carries an owner token. The token is the
+first 12 hex characters of the SHA-256 of the canonical checkout path.
+The target prints the plan and asks one time. Use `--dry-run` to print
+the plan only:
+
+```bash
+make smolvm-clean ARGS='--dry-run'
+```
+
+Use `--yes` to skip the prompt:
+
+```bash
+make smolvm-clean ARGS='--yes'
+```
+
+`SMOLVM_CLEAN_ASSUME_YES=1` also skips the prompt. A non-interactive
+run without a skip flag stops with an error. A moved checkout gets a
+new token. Its old resources become foreign and stay.
+
+With a remote address, the target also deletes the cache bases that it
+can name. The serve API has no list route for bases. Remove another
+base by hand on the server after you check its owner.
+
+`make ci` uses smolvm in auto mode when the binary and the accelerator
+work. Otherwise it prints a warning and uses the host. Set
+`SMOLVM_ENABLED=1` to require smolvm. The run then exits 3 when smolvm
+is unavailable. Set `SMOLVM_ENABLED=0` to force the host path.
+
+## File manifest
+
+| Path | Action | Notes |
+| --- | --- | --- |
+| `.editorconfig` | merge or copy | Keep your existing rules. |
+| `.githook/*` | copy | Copy the three hooks. |
+| `.github/workflows/ci.yml` | adapt | Change branches and matrix. |
+| `.github/workflows/release.yml` | adapt or skip | Adapt the tag trigger. |
+| `.github/dependabot.yml` | optional | Updates the action pins. |
+| `Makefile` | merge | Keep your targets. |
+| `cog.toml` | adapt | Set your release branch. |
+| `mise.toml` | merge | Add the selected tools. |
+| `scripts/ci.sh` | copy | Runs the check scripts. |
+| `scripts/check-*.sh` | copy selected | Copy the Phase 3 checks. |
+| `scripts/format*.sh` | copy selected | Copy `format.sh` and pairs. |
+| `scripts/smolvm*.sh` | optional | Copy the five files. |
+| `smol/*` | optional | Copy the five smol files. |
+| `.gitignore` | merge | Add `.cache/` and `.smolvm/`. |
+| `README.md`, `LICENSE`, `docs/*` | do not copy | Write your own. |
+| `.cache/`, `.smolvm/` | do not copy | Add both to `.gitignore`. |
+
+## Verification
+
+1. Run each selected check directly. Add one line for each script that
+    you copied:
+
+    ```bash
+    scripts/check-bash.sh
+    scripts/check-shfmt.sh
+    scripts/check-markdown.sh
+    ```
+
+    A check exits non-zero on a problem.
+
+2. Force the host path first:
+
+    ```bash
+    SMOLVM_ENABLED=0 make ci
+    ```
+
+    This command skips the microVM detection. It prints no warning. It
+    shows whether the tools and the files pass on the host.
+
+3. Apply the formatters, then review the diff:
+
+    ```bash
+    make format
+    git diff --stat
+    git diff
+    ```
+
+    The formatters change files. Review every change before you commit.
+
+4. Install the hooks:
+
+    ```bash
+    make hooks
+    ```
+
+5. Make one test commit. The commit-msg hook runs `cog verify`. The
+    pre-commit hook runs `scripts/ci.sh`:
+
+    ```bash
+    git commit --allow-empty -m 'chore: test the hooks'
+    ```
+
+    Remove the test commit with `git reset --soft HEAD~1` when you do not
+    want it.
+
+6. Optional sandbox check:
+
+    ```bash
+    make smolvm-preflight
+    make smolvm-pack
+    make smolvm
+    make smolvm-verify
+    ```
+
+7. Optional remote check. Use your server address:
+
+    ```bash
+    SMOLVM_ADDR=https://smolvm.example.com make smolvm
+    ```
+
+    The remote path needs `curl` and `tar`. It has no host fallback.
+
+## Rollback
+
+Remove the hook path:
+
+```bash
+git config --unset core.hooksPath
+```
+
+This command fails when the key is absent. That result is safe to
+ignore. When the repository had a hook path before adoption, set it
+again:
+
+```bash
+git config core.hooksPath <old-path>
+```
+
+Remove the copied files. Remove only the files that you added:
+
+```bash
+rm -f scripts/ci.sh scripts/format.sh
+rm -f scripts/check-bash.sh scripts/check-markdown.sh
+rm -f scripts/format-shfmt.sh
+rm -rf .githook
+rm -rf .cache/smolvm .smolvm
+```
+
+Replace the example names with the files that you copied. Do not use a
+wildcard when the repository had a file with the same name before
+adoption.
+
+Revert the merged files from your backup:
+
+```bash
+cp -p Makefile.before-adopt Makefile
+cp -p mise.toml.before-adopt mise.toml
+cp -p .gitignore.before-adopt .gitignore
+cp -p .editorconfig.before-adopt .editorconfig
+cp -p cog.toml.before-adopt cog.toml
+cp -p .github/workflows/ci.yml.before-adopt .github/workflows/ci.yml
+```
+
+Remove the backup files after the rollback. Use `git revert` on the
+adoption commit when the adoption is one commit.
+
+## Troubleshooting
+
+### A tool is missing
+
+A check prints a line like this:
+
+```text
+error: shellcheck is not on PATH. Install shellcheck first.
+```
+
+Install the tool with `mise install`. Or add the tool to the config:
+
+```bash
+mise use shellcheck@0
+```
+
+Use the major version from `mise.toml`. You can also remove the check
+script. Keep each tool version in `mise.toml`.
+
+### The hook does not run
+
+Run these commands:
+
+```bash
+make hooks
+git config --get core.hooksPath
+```
+
+The output must be `.githook`. Each clone needs `make hooks`. When the
+output is another path, an existing hook tool owns the path. Do not
+overwrite it. Add `scripts/ci.sh` and `cog verify` to that tool's
+hooks.
+
+### check-commits fails on old history
+
+`scripts/check-commits.sh` runs `cog check --from-latest-tag` when a tag
+exists. Without a tag it runs `cog check ..HEAD`. The check reads the
+full history.
+
+Create a local baseline tag at the adoption commit:
+
+```bash
+git tag v0.0.0
+```
+
+Do not push the tag. The check then reads only the commits after it.
+You can also remove `scripts/check-commits.sh` until the history can
+pass. The commit-msg hook still rejects a new message that does not
+follow the format. Do not use `--no-verify`.
+
+### check-editorconfig reports many existing files
+
+The check reads every tracked and untracked file that git lists. Fix the
+reported files. Or narrow the file list in the copied script:
+
+```bash
+mapfile -d '' -t files < <(
+  git ls-files -z --cached --others --exclude-standard -- '*.sh' '*.md'
+)
+```
+
+This example checks only shell and Markdown files. Keep the new files
+inside the selection.
+
+### gitleaks finds an existing secret
+
+Rotate the secret first. A secret in the working tree is exposed. Then
+remove the value from the file or replace it with a placeholder. When
+the value is a test value, add a narrow allowlist to a gitleaks config.
+Pass that config to `gitleaks` in the copied check script.
+
+The check scans a temporary copy of the working tree with
+`gitleaks detect --no-git`. It does not scan the git history. A secret
+that exists only in old commits stays out of this check.
+
+### smolvm is unavailable
+
+Auto mode prints a warning and uses the host. That is the committed
+behavior. To require the sandbox, run:
+
+```bash
+SMOLVM_ENABLED=1 make ci
+```
+
+The run exits 3 when smolvm or the accelerator is missing. The checks
+do not run on the host. Install smolvm and fix the accelerator. You can
+also set `SMOLVM_ADDR` for a remote run.
+
+### A remote cache base stays after clean
+
+`make smolvm-clean` deletes only the bases that it can name from the
+current checkout and repository state. The serve API has no list route
+for bases. A base of another checkout or another state stays. Check its
+owner, then remove it by hand on the server. The name is
+`smolvm-ci-<owner>-<key>.qcow2`. The owner token is the first 12 hex
+characters of the SHA-256 of the canonical checkout path. The seed base
+always stays.
+
+### make uses /bin/sh and fails
+
+Add the header to the Makefile:
+
+```make
+SHELL := bash
+.DEFAULT_GOAL := help
+```
+
+The recipes use bash syntax. Without the header, `make` uses `/bin/sh`.
+
+## Limits
+
+- This guide does not rewrite history. Old commits stay as they are.
+- It does not replace your existing CI. You adapt the workflow and
+  keep your jobs.
+- It does not cover uncommitted files. Commit or stash your work first.
+- The smolvm guest is offline. The repository mount is read-only. A
+  check that needs network access or a write fails in the guest.
