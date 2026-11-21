@@ -98,22 +98,29 @@ inside a smolvm microVM against the live working tree.
 `make smolvm-pack` builds the cached pack that the sandbox runs
 from. It refuses to run while `SMOLVM_ADDR` is set.
 `make smolvm-clean` removes the cached packs and deletes the dangling
-machines of this checkout. Every resource name carries an owner token
-from the canonical checkout path: `smolvm-build-<owner>-<hash>`,
-`smolvm-run-<owner>-*`, and `smolvm-remote-<owner>-*`. With a remote
-address it also deletes `smolvm-ci-<owner>-<key>.qcow2` cache bases on
-the server. The target prints the plan and asks one time. Use
-`--dry-run` to print the plan only, or `--yes` to skip the prompt. Set
-`SMOLVM_CLEAN_ASSUME_YES=1` to skip the prompt too. A non-interactive
-run without a skip flag stops with an error. Machines and bases of
-another checkout stay. A moved checkout gets a new token, so its old
-resources become foreign and are reported, not deleted.
+machines of this checkout. Every resource name has an owner:
+`smolvm-build-<owner>-<hash>`, `smolvm-run-<owner>-*`, and
+`smolvm-remote-<owner>-*`. With a remote address it also deletes
+`smolvm-ci-<owner>-<key>.qcow2` cache bases on the server. In local mode
+the owner is the first 12 hex characters of the SHA-256 of the canonical
+checkout path. Set `SMOLVM_OWNER` to use a name instead. A shared server
+requires `SMOLVM_OWNER`. Use one unique value for each repository. An
+empty value stops a remote command before any API call. The value uses
+lowercase letters, digits, hyphen, and underscore. It starts with a
+letter or a digit. It has at most 16 characters. The target prints the
+plan and asks one time. Use `--dry-run` to print the plan only, or
+`--yes` to skip the prompt. Set `SMOLVM_CLEAN_ASSUME_YES=1` to skip the
+prompt too. A non-interactive run without a skip flag stops with an
+error. Machines and bases of another owner stay. When `SMOLVM_OWNER` is
+unset, a moved checkout gets a new token. Its old resources become
+foreign and are reported, not deleted.
 `make smolvm-exec ARGS='...'` runs one command inside the sandbox.
 Set `SMOLVM_ADDR` to run the checks on a remote `smolvm serve` server.
-The remote path needs `curl` and `tar`. It has no host fallback. It
-sends the git metadata with the working tree so the checks can read the
-history. `make smolvm-pack` refuses to run while `SMOLVM_ADDR` is set.
-Unset the variable before you build a local pack.
+Set `SMOLVM_OWNER` to a unique name for this repository. The remote
+path needs `curl` and `tar`. It has no host fallback. It sends the git
+metadata with the working tree so the checks can read the history.
+`make smolvm-pack` refuses to run while `SMOLVM_ADDR` is set. Unset the
+variable before you build a local pack.
 
 Set `SMOLVM_CPUS` and `SMOLVM_MEMORY_MB` to change the CPU count and
 memory of the machine. The defaults are 1 CPU and 512 MiB. Each value

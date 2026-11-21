@@ -486,23 +486,29 @@ builds a new pack.
 MiB. The defaults are 1 CPU and 512 MiB. Each value must be a positive
 integer.
 
-Set `SMOLVM_ADDR` to use a remote `smolvm serve` server. The remote
-path needs `curl` and `tar`. It has no host fallback. The client copies
-the working tree and the git metadata to the server. The server has no
-authentication by default. Bind it to loopback or a protected Unix
-socket. Put a remote server behind an authenticated TLS proxy. Anyone
-who can call the API can create machines and run commands.
-`SMOLVM_SERVE_TOKEN` sends a bearer token. The scripts do not print the
-token.
+Set `SMOLVM_ADDR` to use a remote `smolvm serve` server. Set
+`SMOLVM_OWNER` to a unique name for your repository. Remote mode
+requires `SMOLVM_OWNER`. An empty value stops the command before any
+API call. The value uses lowercase letters, digits, hyphen, and
+underscore. It starts with a letter or a digit. It has at most 16
+characters. The remote path needs `curl` and `tar`. It has no host
+fallback. The client copies the working tree and the git metadata to
+the server. The server has no authentication by default. Bind it to
+loopback or a protected Unix socket. Put a remote server behind an
+authenticated TLS proxy. Anyone who can call the API can create machines
+and run commands. `SMOLVM_SERVE_TOKEN` sends a bearer token. The scripts
+do not print the token.
 
 `make smolvm-pack` refuses to run while `SMOLVM_ADDR` is set. Unset the
 variable before you build a local pack.
 
 `make smolvm-clean` removes the cached packs and the machines of this
-checkout. Every resource name carries an owner token. The token is the
-first 12 hex characters of the SHA-256 of the canonical checkout path.
-The target prints the plan and asks one time. Use `--dry-run` to print
-the plan only:
+checkout. Every resource name carries an owner. In local mode the owner
+is the first 12 hex characters of the SHA-256 of the canonical checkout
+path. Set `SMOLVM_OWNER` to use a name instead. Remote mode requires
+`SMOLVM_OWNER`. Use one unique value for each repository. The target
+prints the plan and asks one time. Use `--dry-run` to print the plan
+only:
 
 ```bash
 make smolvm-clean ARGS='--dry-run'
@@ -515,8 +521,9 @@ make smolvm-clean ARGS='--yes'
 ```
 
 `SMOLVM_CLEAN_ASSUME_YES=1` also skips the prompt. A non-interactive
-run without a skip flag stops with an error. A moved checkout gets a
-new token. Its old resources become foreign and stay.
+run without a skip flag stops with an error. When `SMOLVM_OWNER` is
+unset, a moved checkout gets a new token. Its old resources become
+foreign and stay.
 
 With a remote address, the target also deletes the cache bases that it
 can name. The serve API has no list route for bases. Remove another
@@ -605,13 +612,16 @@ is unavailable. Set `SMOLVM_ENABLED=0` to force the host path.
     make smolvm-verify
     ```
 
-7. Optional remote check. Use your server address:
+7. Optional remote check. Use your server address and a unique owner:
 
     ```bash
-    SMOLVM_ADDR=https://smolvm.example.com make smolvm
+    SMOLVM_OWNER=my-repo SMOLVM_ADDR=https://smolvm.example.com make smolvm
     ```
 
-    The remote path needs `curl` and `tar`. It has no host fallback.
+    Every remote command needs `SMOLVM_OWNER`. Use a different value for
+    each repository. An empty value stops the command before any API
+    call. The remote path needs `curl` and `tar`. It has no host
+    fallback.
 
 ## Rollback
 
@@ -749,11 +759,11 @@ also set `SMOLVM_ADDR` for a remote run.
 
 `make smolvm-clean` deletes only the bases that it can name from the
 current checkout and repository state. The serve API has no list route
-for bases. A base of another checkout or another state stays. Check its
+for bases. A base of another owner or another state stays. Check its
 owner, then remove it by hand on the server. The name is
-`smolvm-ci-<owner>-<key>.qcow2`. The owner token is the first 12 hex
-characters of the SHA-256 of the canonical checkout path. The seed base
-always stays.
+`smolvm-ci-<owner>-<key>.qcow2`. In local mode the owner is the first
+12 hex characters of the SHA-256 of the canonical checkout path. Remote
+mode requires `SMOLVM_OWNER`. The seed base always stays.
 
 ### make uses /bin/sh and fails
 

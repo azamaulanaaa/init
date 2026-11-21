@@ -103,7 +103,8 @@ for item in data:
 }
 
 # Report whether a name looks like an older name with no owner token.
-# A 12-hex token after the family prefix marks another owner.
+# A 12-hex token after the family prefix is one owner form. A custom
+# SMOLVM_OWNER value is another form.
 # The result only selects an informational note. It never selects a
 # deletion.
 legacy_name() {
