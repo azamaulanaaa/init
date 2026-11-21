@@ -19,6 +19,7 @@ checks, the hooks, the CI jobs, and the release flow.
 | CI checks | `.github/workflows/ci.yml` | Runs the same checks on GitHub. |
 | Release | `cog.toml`, `release.yml` | Creates the changelog and a tag. |
 | Sandbox | `scripts/smolvm*.sh`, `smol/` | Runs the checks in a microVM. |
+| Rust | `Cargo.toml`, `deny.toml` | Runs the Rust checks. |
 
 ## Before you start
 
@@ -223,12 +224,21 @@ Keep one help target and one default goal.
 | `dockerfmt` | `dockerfmt` | Keep with `hadolint`. |
 | `dclint` | `dclint` | Keep for Compose files. |
 | `mise` | `mise` | Keep for `mise.toml`. |
+| `cargo` | `cargo` | Keep for a Rust crate. |
+| `clippy` | `cargo clippy` | Keep for a Rust crate. |
+| `rustfmt` | `cargo fmt` | Keep for a Rust crate. |
+| `cargo-deny-advisories` | `cargo deny` | Keep for a Rust crate. |
+| `cargo-deny-bans` | `cargo deny` | Keep for a Rust crate. |
+| `cargo-deny-licenses` | `cargo deny` | Keep for a Rust crate. |
+| `cargo-deny-sources` | `cargo deny` | Keep for a Rust crate. |
 
 Keep `bash` when the repository has `*.sh`, `*.bash`, `*.bats`, or a
 file with a `bash` or `sh` shebang. Keep `markdown` when the repository
 has Markdown files. The check skips `CHANGELOG.md`. Keep `jactionlint`
 when the repository has `.github/workflows/*.yml` or `*.yaml`. The
-`mise` check skips when `mise` is absent.
+`mise` check skips when `mise` is absent. Keep the Rust checks when the
+repository has `Cargo.toml`. Each Rust check skips and exits 0 when
+`cargo` or `Cargo.toml` is absent.
 
 Delete a check script that you do not need. `scripts/ci.sh` runs every
 `scripts/check-*.sh` in name order. The script file is the only
@@ -560,6 +570,20 @@ is unavailable. Set `SMOLVM_ENABLED=0` to force the host path.
 | `Makefile` | merge | Keep your targets. |
 | `cog.toml` | adapt | Set your release branch. |
 | `mise.toml` | merge | Add the selected tools. |
+| `Cargo.toml` | adapt | Set the crate name, the version, and the lints. |
+| `Cargo.lock` | copy or adapt | Keep the lock file for a binary crate. |
+| `deny.toml` | adapt | Set the advisory, ban, license, and source policy. |
+| `src/lib.rs` | adapt | Replace the example library. |
+| `src/main.rs` | adapt | Replace the example binary. |
+| `scripts/check-cargo.sh` | copy | Runs `cargo test`. |
+| `scripts/check-clippy.sh` | copy | Runs `cargo clippy`. |
+| `scripts/check-rustfmt.sh` | copy | Runs `cargo fmt --check`. |
+| `scripts/check-cargo-deny-advisories.sh` | copy | Runs the advisory check. |
+| `scripts/check-cargo-deny-bans.sh` | copy | Runs the ban check. |
+| `scripts/check-cargo-deny-licenses.sh` | copy | Runs the license check. |
+| `scripts/check-cargo-deny-sources.sh` | copy | Runs the source check. |
+| `scripts/format-rustfmt.sh` | copy | Runs `cargo fmt`. |
+| `smol/init.sh` | adapt | Add `build-essential` to the apt package list. |
 | `scripts/ci.sh` | copy | Runs the check scripts. |
 | `scripts/check-*.sh` | copy selected | Copy the Phase 3 checks. |
 | `scripts/format*.sh` | copy selected | Copy `format.sh` and pairs. |
@@ -567,7 +591,7 @@ is unavailable. Set `SMOLVM_ENABLED=0` to force the host path.
 | `scripts/release-guest.sh` | copy | Guest release worker. |
 | `scripts/smolvm*.sh` | optional | Copy the five files. |
 | `smol/*` | optional | Copy the five smol files. |
-| `.gitignore` | merge | Add `.cache/` and `.smolvm/`. |
+| `.gitignore` | merge | Add `.cache/`, `.smolvm/`, and `target/`. |
 | `README.md`, `LICENSE`, `docs/*` | do not copy | Write your own. |
 | `.cache/`, `.smolvm/` | do not copy | Add both to `.gitignore`. |
 
@@ -588,7 +612,22 @@ That file sources the resources file. Host mode needs neither.
 
     A check exits non-zero on a problem.
 
-2. Force the host path first:
+2. Run the Rust checks. Run the advisory check with network access:
+
+    ```bash
+    make check-cargo
+    make check-clippy
+    make check-rustfmt
+    make check-cargo-deny-bans
+    make check-cargo-deny-licenses
+    make check-cargo-deny-sources
+    make format-rustfmt
+    ```
+
+    `make format-rustfmt` changes files. Review the diff before you
+    commit. Run `make check-cargo-deny-advisories` with network access.
+
+3. Force the host path first:
 
     ```bash
     SMOLVM_ENABLED=0 make ci
@@ -597,7 +636,7 @@ That file sources the resources file. Host mode needs neither.
     This command skips the microVM detection. It prints no warning. It
     shows whether the tools and the files pass on the host.
 
-3. Apply the formatters, then review the diff:
+4. Apply the formatters, then review the diff:
 
     ```bash
     make format
@@ -607,13 +646,13 @@ That file sources the resources file. Host mode needs neither.
 
     The formatters change files. Review every change before you commit.
 
-4. Install the hooks:
+5. Install the hooks:
 
     ```bash
     make hooks
     ```
 
-5. Make one test commit. The commit-msg hook runs `cog verify`. The
+6. Make one test commit. The commit-msg hook runs `cog verify`. The
     pre-commit hook runs `scripts/ci.sh`:
 
     ```bash
@@ -623,7 +662,7 @@ That file sources the resources file. Host mode needs neither.
     Delete the test commit with `git reset --soft HEAD~1` when you do not
     want it.
 
-6. Optional sandbox check:
+7. Optional sandbox check:
 
     ```bash
     make smolvm-preflight
@@ -632,7 +671,7 @@ That file sources the resources file. Host mode needs neither.
     make smolvm-verify
     ```
 
-7. Optional remote check. Use your server address and a unique owner:
+8. Optional remote check. Use your server address and a unique owner:
 
     ```bash
     SMOLVM_OWNER=my-repo SMOLVM_ADDR=https://smolvm.example.com make smolvm
@@ -705,6 +744,18 @@ mise use shellcheck@0
 
 Use the major version from `mise.toml`. You can also delete the check
 script. Keep each tool version in `mise.toml`.
+
+### A Rust check skips or fails
+
+The Rust scripts skip and exit 0 when `cargo` or `Cargo.toml` is
+absent. Install Rust with `mise install` when `mise.toml` lists `rust`.
+A Rust build also needs a C toolchain. Install `build-essential` on
+Debian or Ubuntu.
+
+The cargo-deny advisories check needs the crates.io registry and the
+RustSec advisory database. Run that check on a host with network
+access. The local smolvm pack path is offline and cannot download the
+database.
 
 ### The hook does not run
 
@@ -796,6 +847,153 @@ SHELL := bash
 
 The recipes use bash syntax. Without the header, `make` uses `/bin/sh`.
 
+## Rust add-on
+
+This add-on adds a minimal Rust project and its checks to an existing repository.
+The project has one library and one binary. The checks cover the tests,
+clippy, rustfmt, and cargo-deny.
+
+### Files
+
+Copy or adapt these files:
+
+| Path | Action | Notes |
+| --- | --- | --- |
+| `Cargo.toml` | adapt | Set the crate name, the version, and the lints. |
+| `Cargo.lock` | copy or adapt | Keep the lock file for a binary crate. |
+| `deny.toml` | adapt | Set the advisory, ban, license, and source policy. |
+| `src/lib.rs` | adapt | Replace the example library. |
+| `src/main.rs` | adapt | Replace the example binary. |
+| `scripts/check-cargo.sh` | copy | Runs `cargo test`. |
+| `scripts/check-clippy.sh` | copy | Runs `cargo clippy`. |
+| `scripts/check-rustfmt.sh` | copy | Runs `cargo fmt --check`. |
+| `scripts/check-cargo-deny-advisories.sh` | copy | Runs the advisory check. |
+| `scripts/check-cargo-deny-bans.sh` | copy | Runs the ban check. |
+| `scripts/check-cargo-deny-licenses.sh` | copy | Runs the license check. |
+| `scripts/check-cargo-deny-sources.sh` | copy | Runs the source check. |
+| `scripts/format-rustfmt.sh` | copy | Runs `cargo fmt`. |
+
+The starter files are an example. Change the crate name, the module
+paths, and the source layout to match the existing crate. Keep the
+check scripts as they are, or change the paths inside them.
+
+### Makefile
+
+Add these targets to the `Makefile`:
+
+| Target | Recipe |
+| --- | --- |
+| `check-cargo` | `scripts/check-cargo.sh` |
+| `check-clippy` | `scripts/check-clippy.sh` |
+| `check-cargo-deny-advisories` | `scripts/check-cargo-deny-advisories.sh` |
+| `check-cargo-deny-bans` | `scripts/check-cargo-deny-bans.sh` |
+| `check-cargo-deny-licenses` | `scripts/check-cargo-deny-licenses.sh` |
+| `check-cargo-deny-sources` | `scripts/check-cargo-deny-sources.sh` |
+| `check-rustfmt` | `scripts/check-rustfmt.sh` |
+| `format-rustfmt` | `scripts/format-rustfmt.sh` |
+
+Add the eight names to the `.PHONY` list.
+
+### mise
+
+Add these tools to `mise.toml`:
+
+```toml
+rust = "stable"
+cargo-deny = "0"
+```
+
+### CI
+
+Add these matrix entries to `.github/workflows/ci.yml`:
+
+```yaml
+- name: cargo
+  install_args: rust
+  script: scripts/check-cargo.sh
+- name: clippy
+  install_args: rust
+  script: scripts/check-clippy.sh
+- name: rustfmt
+  install_args: rust
+  script: scripts/check-rustfmt.sh
+- name: cargo-deny-advisories
+  install_args: "rust cargo-deny"
+  script: scripts/check-cargo-deny-advisories.sh
+- name: cargo-deny-bans
+  install_args: "rust cargo-deny"
+  script: scripts/check-cargo-deny-bans.sh
+- name: cargo-deny-licenses
+  install_args: "rust cargo-deny"
+  script: scripts/check-cargo-deny-licenses.sh
+- name: cargo-deny-sources
+  install_args: "rust cargo-deny"
+  script: scripts/check-cargo-deny-sources.sh
+```
+
+Add this step before the tool install step:
+
+```yaml
+- name: Install a C toolchain for Rust checks
+  if: contains(matrix.install_args, 'rust')
+  run: |
+    apt-get update
+    apt-get install -y --no-install-recommends build-essential
+```
+
+Add the new job names to the required status checks.
+
+### Other files
+
+Add this line to `.gitignore`:
+
+```text
+target/
+```
+
+Add `build-essential` to the apt package list in `smol/init.sh`. The
+local pack build needs a C toolchain to build Rust crates.
+
+### Check behavior
+
+`check-cargo` runs `cargo test`. `check-clippy` runs
+`cargo clippy --all-targets -- -D warnings`. `check-rustfmt` runs
+`cargo fmt --all -- --check`. The four cargo-deny scripts run
+`cargo deny --all-features check advisories`, `bans`, `licenses`, and
+`sources`.
+
+Each script skips and exits 0 when `cargo` or `Cargo.toml` is absent.
+A skipped check is not a failure.
+
+### Network
+
+`cargo test`, clippy, and cargo-deny can need the crates.io registry.
+The advisories check also needs the RustSec advisory database.
+
+The local pack path is offline. The advisories check cannot download
+the RustSec database on that path. The remote `SMOLVM_ADDR` path has
+network. Run the advisories check on the host or on the remote path.
+
+### Rust verification
+
+Run these commands:
+
+```bash
+make check-cargo
+make check-clippy
+make check-rustfmt
+make check-cargo-deny-bans
+make check-cargo-deny-licenses
+make check-cargo-deny-sources
+make format-rustfmt
+```
+
+Run this command with network access:
+
+```bash
+make check-cargo-deny-advisories
+```
+
 ## Limits
 
 - This guide does not rewrite history. Old commits stay as they are.
@@ -804,3 +1002,6 @@ The recipes use bash syntax. Without the header, `make` uses `/bin/sh`.
 - It does not cover uncommitted files. Commit or stash your work first.
 - The smolvm guest is offline. The guest mounts the repository read-only.
   A check that needs network access or a write fails in the guest.
+- The local smolvm pack path is offline. The Rust cargo-deny advisories
+  check cannot download the RustSec database there. Run that check on the
+  host or through `SMOLVM_ADDR`, where the network is available.
