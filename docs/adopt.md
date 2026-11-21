@@ -19,6 +19,7 @@ checks, the hooks, the CI jobs, and the release flow.
 | CI checks | `.github/workflows/ci.yml` | Runs the same checks on GitHub. |
 | Release | `cog.toml`, `release.yml` | Creates the changelog and a tag. |
 | Sandbox | `scripts/smolvm*.sh`, `smol/` | Runs the checks in a microVM. |
+| Commit relevancy | `make agent-fx` | Runs the opt-in agent check. |
 
 ## Before you start
 
@@ -62,6 +63,9 @@ The selected checks need `shellcheck`, `shfmt`, `cog`,
 `markdownlint-cli2`, `editorconfig-checker`, `gitleaks`,
 `jactionlint`, `zizmor`, `hadolint`, `dockerfmt`, and `dclint` on
 `PATH`. The `mise` check also needs `mise`.
+
+The optional agent-fx add-on also needs `fx` and `jq`. See the agent-fx
+add-on section.
 
 If you use `mise`, run `mise install`. Then activate `mise` in your
 shell so the tools are on `PATH`.
@@ -567,6 +571,14 @@ is unavailable. Set `SMOLVM_ENABLED=0` to force the host path.
 | `scripts/release-guest.sh` | copy | Guest release worker. |
 | `scripts/smolvm*.sh` | optional | Copy the five files. |
 | `smol/*` | optional | Copy the five smol files. |
+| `.fx/prompt/default.md` | copy | Keeps the default prompt. |
+| `.fx/settings.json.example` | copy | Copy to the local settings file. |
+| `.fx/skills/default/SKILL.md` | copy | Keeps the default skill. |
+| `scripts/agent-fx.sh` | optional | Runs the agent in the guest. |
+| `scripts/check-agent-fx.sh` | optional | Runs the agent-fx check. |
+| `scripts/test-agent-fx*.sh` | optional | Runs the offline tests. |
+| `scripts/test-commit-lifecycle.sh` | optional | Runs the lifecycle test. |
+| `docs/agent-fx.md` | optional | Holds the agent-fx reference. |
 | `.gitignore` | merge | Add `.cache/` and `.smolvm/`. |
 | `README.md`, `LICENSE`, `docs/*` | do not copy | Write your own. |
 | `.cache/`, `.smolvm/` | do not copy | Add both to `.gitignore`. |
@@ -642,6 +654,23 @@ That file sources the resources file. Host mode needs neither.
     each repository. An empty value stops the command before any API
     call. The remote path needs `curl` and `tar`. It has no host
     fallback.
+
+8. Optional agent-fx check. Run the offline tests first:
+
+    ```bash
+    make test-agent-fx
+    make test-agent-fx-history
+    make test-agent-fx-prompts
+    make test-commit-lifecycle
+    ```
+
+    Then run one mode with a working config and network:
+
+    ```bash
+    make agent-fx
+    ```
+
+    See the agent-fx add-on.
 
 ## Rollback
 
@@ -762,6 +791,20 @@ The check scans a temporary copy of the working tree with
 `gitleaks detect --no-git`. It does not scan the git history. A secret
 that exists only in old commits stays out of this check.
 
+### The agent-fx check warns and exits 0
+
+The check warns and exits 0 when a tool or the network is absent. Check
+these causes:
+
+- `fx` is missing in the guest. The pack is old. Run
+  `make smolvm-pack` again.
+- `jq` is missing. Add `jq = "1"` to `mise.toml`. Run
+  `make smolvm-pack` again.
+- The endpoint is unreachable. Use a public HTTPS host. Check
+  `base_url` in `.fx/settings.json`.
+- The CI job skips. Set the `AGENT_FX_ENABLED` variable to `true`.
+  Add the `AGENT_FX_API_KEY` secret.
+
 ### smolvm is unavailable
 
 Auto mode prints a warning and uses the host. That is the committed
@@ -796,6 +839,177 @@ SHELL := bash
 
 The recipes use bash syntax. Without the header, `make` uses `/bin/sh`.
 
+## agent-fx add-on
+
+The agent-fx add-on is an opt-in check for commit-message relevancy. The
+`fx` agent reads a commit message and the staged diff or the history
+diff. The agent returns `PASS` or `FAIL`. The check runs only inside a
+smolvm microVM. The default `make ci` path stays offline and does not
+call the agent.
+
+Add this feature after the base adoption phases. The feature needs the
+smolvm sandbox from Phase 7.
+
+### Copy the agent-fx files
+
+Copy these files from the staging clone:
+
+- `.fx/prompt/default.md`
+- `.fx/settings.json.example`
+- `.fx/skills/default/SKILL.md`
+- `scripts/agent-fx.sh`
+- `scripts/check-agent-fx.sh`
+- `scripts/test-agent-fx.sh`
+- `scripts/test-agent-fx-history.sh`
+- `scripts/test-agent-fx-prompts.sh`
+- `scripts/test-commit-lifecycle.sh`
+- `docs/agent-fx.md`
+
+Run these commands from your repository root:
+
+```bash
+src=/tmp/template
+mkdir -p .fx/prompt .fx/skills/default scripts docs
+cp -p "$src/.fx/prompt/default.md" .fx/prompt/default.md
+cp -p "$src/.fx/settings.json.example" .fx/settings.json.example
+cp -p "$src/.fx/skills/default/SKILL.md" .fx/skills/default/SKILL.md
+cp -p "$src/scripts/agent-fx.sh" scripts/agent-fx.sh
+cp -p "$src/scripts/check-agent-fx.sh" scripts/check-agent-fx.sh
+for name in test-agent-fx test-agent-fx-history \
+  test-agent-fx-prompts test-commit-lifecycle; do
+  cp -p "$src/scripts/$name.sh" "scripts/$name.sh"
+done
+cp -p "$src/docs/agent-fx.md" docs/agent-fx.md
+```
+
+### Merge the agent-fx targets
+
+Add these targets to your `Makefile`:
+
+| Target | Recipe |
+| --- | --- |
+| `agent-fx` | `scripts/agent-fx.sh` |
+| `agent-fx-history` | `AGENT_FX_MODE=history scripts/agent-fx.sh` |
+| `agent-fx-all` | Runs the driver for each prompt in history mode. |
+| `test-agent-fx` | `scripts/test-agent-fx.sh` |
+| `test-agent-fx-history` | `scripts/test-agent-fx-history.sh` |
+| `test-agent-fx-prompts` | `scripts/test-agent-fx-prompts.sh` |
+| `test-commit-lifecycle` | `scripts/test-commit-lifecycle.sh` |
+
+Add the seven names to `.PHONY`. The committed `Makefile` has the exact
+recipes. The `agent-fx-all` recipe ignores a caller value of
+`AGENT_FX_PROMPT`.
+
+### Add the agent-fx tools
+
+Add these lines to `mise.toml`:
+
+```toml
+"github:vercel-labs/fx" = "0"
+jq = "1"
+```
+
+`fx` runs the agent. `jq` reads the settings file and the verdict. Run
+`mise install` after the change.
+
+### Install the agent-fx hooks
+
+The `commit-msg` hook runs these commands:
+
+```sh
+cog verify --file "$1"
+AGENT_FX_MESSAGE_FILE="$1" scripts/agent-fx.sh
+```
+
+The `pre-push` hook runs these commands:
+
+```sh
+scripts/ci.sh
+AGENT_FX_MODE=history scripts/agent-fx.sh
+```
+
+A driver run without smolvm or the accelerator prints a warning and
+exits 0. The hook then continues. The full files are in
+`.githook/commit-msg` and `.githook/pre-push`.
+
+### Add the agent-fx CI job
+
+Copy the `agent-fx` job from `.github/workflows/ci.yml`. The job has
+these properties:
+
+- It runs only when the repository variable `AGENT_FX_ENABLED` is
+  `true`.
+- It needs the `AGENT_FX_API_KEY` secret.
+- It runs `make agent-fx-all`.
+- It checks out the full history.
+- It skips the check when the secret is absent.
+- It needs a smolvm-capable runner.
+
+GitHub does not permit a secret in a job `if`. The secret check runs in
+a step. On a runner without smolvm, the driver warns and exits 0.
+
+### Configure the local settings
+
+Copy the example file:
+
+```bash
+mkdir -p .fx
+cp -p .fx/settings.json.example .fx/settings.json
+```
+
+Do not commit `.fx/settings.json`. Add the path to `.gitignore` when
+your repository does not ignore it. The local file holds the provider,
+the endpoint, the model, and the auth fields.
+
+Export the key for bearer auth:
+
+```bash
+export AGENT_FX_API_KEY=<key>
+```
+
+Export `AGENT_FX_ORG_ID` when the config uses a header:
+
+```bash
+export AGENT_FX_ORG_ID=<org-id>
+```
+
+The endpoint must be reachable from the guest. Use a public HTTPS host.
+A loopback address on the host is not reachable from the guest.
+
+### Rebuild the agent-fx pack
+
+The pack installs `fx` and `jq` through `mise.toml`. Build the pack
+again after you change `mise.toml`:
+
+```bash
+make smolvm-pack
+```
+
+The check is guest-only. The host path warns and exits 0. Without the
+guest marker, the check does not call `fx`.
+
+### Check the agent-fx add-on
+
+Run the offline tests first:
+
+```bash
+make test-agent-fx
+make test-agent-fx-history
+make test-agent-fx-prompts
+make test-commit-lifecycle
+```
+
+The tests use a fake `fx`. They need no network and no credentials.
+Then run one mode with a working config and network:
+
+```bash
+make agent-fx
+make agent-fx-history
+```
+
+Both commands build the pack when it is missing. The exit code of the
+check becomes the exit code of the target.
+
 ## Limits
 
 - This guide does not rewrite history. Old commits stay as they are.
@@ -804,3 +1018,7 @@ The recipes use bash syntax. Without the header, `make` uses `/bin/sh`.
 - It does not cover uncommitted files. Commit or stash your work first.
 - The smolvm guest is offline. The guest mounts the repository read-only.
   A check that needs network access or a write fails in the guest.
+- The agent-fx check is opt-in. It needs network and is not part of
+  `make ci`.
+- The agent-fx check does not run on the host. The guest can read its
+  own environment. Treat the secret as visible to the guest process.
