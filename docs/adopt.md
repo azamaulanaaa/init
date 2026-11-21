@@ -1,8 +1,8 @@
-# Adopt the harness
+# Add the checks and tools to an existing repository
 
 ## Purpose and audience
 
-This guide adds the harness to an existing repository. You keep your
+This guide adds the checks and tools to an existing repository. You keep your
 layout and your history. The guide copies files and merges settings. It
 does not replace your files without a review.
 
@@ -25,7 +25,7 @@ checks, the hooks, the CI jobs, and the release flow.
 Work on a branch:
 
 ```bash
-git switch -c adopt-harness
+git switch -c add-checks
 ```
 
 Start from a clean tree. This command must print no lines:
@@ -48,7 +48,7 @@ cp -p .github/workflows/ci.yml .github/workflows/ci.yml.before-adopt
 These commands fail when a file is absent. Skip the missing file. A
 missing file is not a problem.
 
-The harness needs these items:
+You need these items:
 
 | Requirement | Need | Notes |
 | --- | --- | --- |
@@ -70,8 +70,9 @@ shell so the tools are on `PATH`.
 
 The check scripts need bash 4 or later because they use `mapfile`.
 The gitleaks check uses GNU `cp --parents`. On macOS, provide GNU
-coreutils on `PATH`, or adapt the copy step. The check pipeline is
-tested on Linux. The smolvm macOS path is not tested.
+coreutils on `PATH`, or adapt the copy step. This repository tests the
+check pipeline on Linux. This repository does not test the smolvm macOS
+path.
 
 ## Adoption phases
 
@@ -83,25 +84,25 @@ still works.
 Clone this repository to a staging directory:
 
 ```bash
-git clone https://github.com/azamaulanaaa/init.git /tmp/harness
+git clone https://github.com/azamaulanaaa/init.git /tmp/template
 ```
 
 Run these commands from your repository root:
 
 ```bash
 mkdir -p scripts
-cp -p /tmp/harness/scripts/ci.sh scripts/ci.sh
-cp -p /tmp/harness/scripts/format.sh scripts/format.sh
-cp -p /tmp/harness/scripts/check-bash.sh scripts/check-bash.sh
-cp -p /tmp/harness/scripts/check-markdown.sh scripts/check-markdown.sh
-cp -p /tmp/harness/scripts/format-shfmt.sh scripts/format-shfmt.sh
+cp -p /tmp/template/scripts/ci.sh scripts/ci.sh
+cp -p /tmp/template/scripts/format.sh scripts/format.sh
+cp -p /tmp/template/scripts/check-bash.sh scripts/check-bash.sh
+cp -p /tmp/template/scripts/check-markdown.sh scripts/check-markdown.sh
+cp -p /tmp/template/scripts/format-shfmt.sh scripts/format-shfmt.sh
 ```
 
 These five files are examples. Copy `ci.sh` for the pipeline. Copy
 `format.sh` for the formatters. Replace the two check names and the
 format name with your selection from Phase 3.
 
-`cp -p` keeps the file mode. A copied script stays executable. Confirm
+`cp -p` keeps the file mode. A copied script stays executable. Check
 the two entry points:
 
 ```bash
@@ -116,14 +117,14 @@ test -x scripts/format.sh
 stops when a formatter fails.
 
 `scripts/ci.sh` can call `scripts/smolvm.sh`. It does this when
-`SMOLVM_ENABLED` is not `0` and either `SMOLVM_ADDR` is set or smolvm
-and the accelerator are available. Phase 1 does not copy
+`SMOLVM_ENABLED` is not `0` and either `SMOLVM_ADDR` has a value or
+smolvm and the accelerator are available. Phase 1 does not copy
 `scripts/smolvm.sh`. A host with smolvm and a working accelerator can
 therefore fail at `make ci` when you skip Phase 7. `SMOLVM_ADDR`
 triggers the same handoff. Choose one option:
 
 - Copy `scripts/smolvm.sh` and its helper files from Phase 7.
-- Edit `scripts/ci.sh` to remove the smolvm handoff.
+- Delete the smolvm handoff from `scripts/ci.sh`.
 - Run every check with `SMOLVM_ENABLED=0`. For example:
 
   ```bash
@@ -135,7 +136,7 @@ Take one option and the phase still works on its own.
 ### Phase 2: Merge the Makefile
 
 Do not overwrite an existing Makefile. Open the staged
-`/tmp/harness/Makefile` and merge it.
+`/tmp/template/Makefile` and merge it.
 
 Add the header first:
 
@@ -196,7 +197,7 @@ Add the targets:
 | `smolvm-preflight` | `smol/preflight.sh` |
 | `smolvm-verify` | `smol/verify.sh` |
 
-Remove the targets for the checks and the sandbox files that you do not
+Delete the targets for the checks and the sandbox files that you do not
 copy.
 
 The `help` target reads the `##` comment on each target. The staged
@@ -229,7 +230,7 @@ has Markdown files. The check skips `CHANGELOG.md`. Keep `jactionlint`
 when the repository has `.github/workflows/*.yml` or `*.yaml`. The
 `mise` check skips when `mise` is absent.
 
-Remove a check script that you do not need. `scripts/ci.sh` runs every
+Delete a check script that you do not need. `scripts/ci.sh` runs every
 `scripts/check-*.sh` in name order. The script file is the only
 registration.
 
@@ -249,7 +250,7 @@ make hooks
 ```
 
 The target sets `core.hooksPath` to `.githook`. It also makes the three
-hook files executable. Confirm the value:
+hook files executable. Check the value:
 
 ```bash
 git config --get core.hooksPath
@@ -259,8 +260,8 @@ The output must be `.githook`. The setting is local to the clone. Each
 clone must run `make hooks`.
 
 `make hooks` replaces any existing hook path. Do not run it when the
-repository uses Husky, lefthook, or the pre-commit framework. Call the
-harness from the existing hooks instead.
+repository uses Husky, lefthook, or the pre-commit framework. Run
+`scripts/ci.sh` and `cog verify` from the existing hooks instead.
 
 Add this command to the existing pre-commit hook and the existing
 pre-push hook:
@@ -289,7 +290,7 @@ Copy `.github/workflows/ci.yml` and adapt it.
 
 1. Change the `push.branches` list. The committed list is `main` and
     `feature/**`. Use your default branch and your branch patterns.
-2. Remove each matrix entry for a check that you dropped.
+2. Delete each matrix entry for a check that you dropped.
 3. Keep or replace the pinned actions and the `jdxcode/mise` container.
     Each action uses a commit SHA. Each image uses a digest. Keep the
     version comment on each pin.
@@ -311,7 +312,7 @@ The `mise` entry uses `install_args: ''` because it needs no tool.
 
 The committed workflow runs on a push to `main` and `feature/**`, on
 each pull request, on demand, and every Monday at 03:00 UTC. Change or
-remove the triggers.
+delete the triggers.
 
 The workflow also has four separate jobs:
 
@@ -420,17 +421,17 @@ cog bump --dry-run --auto
 Copy the sandbox files:
 
 ```bash
-cp -p /tmp/harness/scripts/smolvm.sh scripts/smolvm.sh
-cp -p /tmp/harness/scripts/smolvm-clean.sh scripts/smolvm-clean.sh
-cp -p /tmp/harness/scripts/smolvm-exec.sh scripts/smolvm-exec.sh
-cp -p /tmp/harness/scripts/smolvm-resources.sh scripts/smolvm-resources.sh
-cp -p /tmp/harness/scripts/smolvm-serve.sh scripts/smolvm-serve.sh
+cp -p /tmp/template/scripts/smolvm.sh scripts/smolvm.sh
+cp -p /tmp/template/scripts/smolvm-clean.sh scripts/smolvm-clean.sh
+cp -p /tmp/template/scripts/smolvm-exec.sh scripts/smolvm-exec.sh
+cp -p /tmp/template/scripts/smolvm-resources.sh scripts/smolvm-resources.sh
+cp -p /tmp/template/scripts/smolvm-serve.sh scripts/smolvm-serve.sh
 mkdir -p smol
-cp -p /tmp/harness/smol/base.smolfile smol/base.smolfile
-cp -p /tmp/harness/smol/init.sh smol/init.sh
-cp -p /tmp/harness/smol/pack-build.sh smol/pack-build.sh
-cp -p /tmp/harness/smol/preflight.sh smol/preflight.sh
-cp -p /tmp/harness/smol/verify.sh smol/verify.sh
+cp -p /tmp/template/smol/base.smolfile smol/base.smolfile
+cp -p /tmp/template/smol/init.sh smol/init.sh
+cp -p /tmp/template/smol/pack-build.sh smol/pack-build.sh
+cp -p /tmp/template/smol/preflight.sh smol/preflight.sh
+cp -p /tmp/template/smol/verify.sh smol/verify.sh
 ```
 
 Copy the five `scripts/smolvm*.sh` files together. `smolvm.sh` sources
@@ -440,8 +441,8 @@ The host needs one of these setups:
 
 - Linux x86_64 or aarch64 with a readable `/dev/kvm`. A cloud instance
   or a virtual machine needs nested virtualization.
-- macOS 11 or later on Apple Silicon with `kern.hv_support=1`. The
-  macOS path is not tested in this repository.
+- macOS 11 or later on Apple Silicon with `kern.hv_support=1`. This
+  repository does not test the macOS path.
 
 The host also needs `smolvm`, `git`, `make`, `sha256sum`, and `bash`.
 Install `smolvm` with the vendor script:
@@ -465,8 +466,8 @@ in the guest. `make smolvm-verify` checks the isolation from inside the
 guest and from the host.
 
 The guest is offline. It runs a baked pack and asks the registry for
-nothing. The repository is mounted at `/workspace` with the `:ro` flag.
-The guest kernel enforces the read-only mount. A check that needs
+nothing. The script mounts the repository at `/workspace` with the `:ro`
+flag. The guest kernel enforces the read-only mount. A check that needs
 network access fails in the guest. Fix the check or run it on the host.
 The committed check rules do not use the network.
 
@@ -499,10 +500,10 @@ authenticated TLS proxy. Anyone who can call the API can create machines
 and run commands. `SMOLVM_SERVE_TOKEN` sends a bearer token. The scripts
 do not print the token.
 
-`make smolvm-pack` refuses to run while `SMOLVM_ADDR` is set. Unset the
-variable before you build a local pack.
+`make smolvm-pack` refuses to run while `SMOLVM_ADDR` has a value. Unset
+the variable before you build a local pack.
 
-`make smolvm-clean` removes the cached packs and the machines of this
+`make smolvm-clean` deletes the cached packs and the machines of this
 checkout. Every resource name carries an owner. In local mode the owner
 is the first 12 hex characters of the SHA-256 of the canonical checkout
 path. Set `SMOLVM_OWNER` to use a name instead. Remote mode requires
@@ -526,7 +527,7 @@ unset, a moved checkout gets a new token. Its old resources become
 foreign and stay.
 
 With a remote address, the target also deletes the cache bases that it
-can name. The serve API has no list route for bases. Remove another
+can name. The serve API has no list route for bases. Delete another
 base by hand on the server after you check its owner.
 
 `make ci` uses smolvm in auto mode when the binary and the accelerator
@@ -555,7 +556,7 @@ is unavailable. Set `SMOLVM_ENABLED=0` to force the host path.
 | `README.md`, `LICENSE`, `docs/*` | do not copy | Write your own. |
 | `.cache/`, `.smolvm/` | do not copy | Add both to `.gitignore`. |
 
-## Verification
+## Check the setup
 
 1. Run each selected check directly. Add one line for each script that
     you copied:
@@ -600,7 +601,7 @@ is unavailable. Set `SMOLVM_ENABLED=0` to force the host path.
     git commit --allow-empty -m 'chore: test the hooks'
     ```
 
-    Remove the test commit with `git reset --soft HEAD~1` when you do not
+    Delete the test commit with `git reset --soft HEAD~1` when you do not
     want it.
 
 6. Optional sandbox check:
@@ -625,7 +626,7 @@ is unavailable. Set `SMOLVM_ENABLED=0` to force the host path.
 
 ## Rollback
 
-Remove the hook path:
+Delete the `core.hooksPath` setting:
 
 ```bash
 git config --unset core.hooksPath
@@ -639,7 +640,7 @@ again:
 git config core.hooksPath <old-path>
 ```
 
-Remove the copied files. Remove only the files that you added:
+Delete the copied files. Delete only the files that you added:
 
 ```bash
 rm -f scripts/ci.sh scripts/format.sh
@@ -664,7 +665,7 @@ cp -p cog.toml.before-adopt cog.toml
 cp -p .github/workflows/ci.yml.before-adopt .github/workflows/ci.yml
 ```
 
-Remove the backup files after the rollback. Use `git revert` on the
+Delete the backup files after the rollback. Use `git revert` on the
 adoption commit when the adoption is one commit.
 
 ## Troubleshooting
@@ -683,7 +684,7 @@ Install the tool with `mise install`. Or add the tool to the config:
 mise use shellcheck@0
 ```
 
-Use the major version from `mise.toml`. You can also remove the check
+Use the major version from `mise.toml`. You can also delete the check
 script. Keep each tool version in `mise.toml`.
 
 ### The hook does not run
@@ -713,7 +714,7 @@ git tag v0.0.0
 ```
 
 Do not push the tag. The check then reads only the commits after it.
-You can also remove `scripts/check-commits.sh` until the history can
+You can also delete `scripts/check-commits.sh` until the history can
 pass. The commit-msg hook still rejects a new message that does not
 follow the format. Do not use `--no-verify`.
 
@@ -733,8 +734,8 @@ inside the selection.
 
 ### gitleaks finds an existing secret
 
-Rotate the secret first. A secret in the working tree is exposed. Then
-remove the value from the file or replace it with a placeholder. When
+Rotate the secret first. The working tree holds the secret in plain text.
+Then delete the value from the file or replace it with a placeholder. When
 the value is a test value, add a narrow allowlist to a gitleaks config.
 Pass that config to `gitleaks` in the copied check script.
 
@@ -760,7 +761,7 @@ also set `SMOLVM_ADDR` for a remote run.
 `make smolvm-clean` deletes only the bases that it can name from the
 current checkout and repository state. The serve API has no list route
 for bases. A base of another owner or another state stays. Check its
-owner, then remove it by hand on the server. The name is
+owner, then delete it by hand on the server. The name is
 `smolvm-ci-<owner>-<key>.qcow2`. In local mode the owner is the first
 12 hex characters of the SHA-256 of the canonical checkout path. Remote
 mode requires `SMOLVM_OWNER`. The seed base always stays.
@@ -782,5 +783,5 @@ The recipes use bash syntax. Without the header, `make` uses `/bin/sh`.
 - It does not replace your existing CI. You adapt the workflow and
   keep your jobs.
 - It does not cover uncommitted files. Commit or stash your work first.
-- The smolvm guest is offline. The repository mount is read-only. A
-  check that needs network access or a write fails in the guest.
+- The smolvm guest is offline. The guest mounts the repository read-only.
+  A check that needs network access or a write fails in the guest.
