@@ -17,6 +17,7 @@ checks, the hooks, the CI jobs, and the release flow.
 | Formatters | `scripts/format.sh` | Applies every formatter. |
 | Git hooks | `.githook/` | Checks the message and runs the checks. |
 | CI checks | `.github/workflows/ci.yml` | Runs the same checks on GitHub. |
+| Node and Vite | `package.json` | Runs the Node checks. |
 | Release | `cog.toml`, `release.yml` | Creates the changelog and a tag. |
 | Sandbox | `scripts/smolvm*.sh`, `smol/` | Runs the checks in a microVM. |
 
@@ -155,8 +156,8 @@ Add the `.PHONY` list from the staged Makefile:
   smolvm-preflight smolvm-verify check-jactionlint check-bash \
   check-commits check-dclint check-dockerfmt check-editorconfig \
   check-gitleaks check-hadolint check-markdown check-mise \
-  check-shfmt check-zizmor format format-shfmt format-dockerfmt \
-  format-dclint hooks release
+  check-node check-shfmt check-zizmor format format-node \
+  format-shfmt format-dockerfmt format-dclint hooks release
 ```
 
 The committed file has this list on one line. A line continuation also
@@ -182,9 +183,11 @@ Add the targets:
 | `check-hadolint` | `scripts/check-hadolint.sh` |
 | `check-markdown` | `scripts/check-markdown.sh` |
 | `check-mise` | `scripts/check-mise.sh` |
+| `check-node` | `scripts/check-node.sh` |
 | `check-shfmt` | `scripts/check-shfmt.sh` |
 | `check-zizmor` | `scripts/check-zizmor.sh` |
 | `format` | `scripts/format.sh` |
+| `format-node` | `scripts/format-node.sh` |
 | `format-shfmt` | `scripts/format-shfmt.sh` |
 | `format-dockerfmt` | `scripts/format-dockerfmt.sh` |
 | `format-dclint` | `scripts/format-dclint.sh` |
@@ -223,6 +226,7 @@ Keep one help target and one default goal.
 | `dockerfmt` | `dockerfmt` | Keep with `hadolint`. |
 | `dclint` | `dclint` | Keep for Compose files. |
 | `mise` | `mise` | Keep for `mise.toml`. |
+| `node` | `node`, `npm` | Keep for a Node and Vite application. |
 
 Keep `bash` when the repository has `*.sh`, `*.bash`, `*.bats`, or a
 file with a `bash` or `sh` shebang. Keep `markdown` when the repository
@@ -309,6 +313,8 @@ A matrix entry has this shape:
 ```
 
 The `mise` entry uses `install_args: ''` because it needs no tool.
+The `node` entry uses `install_args: node` and runs
+`scripts/check-node.sh`.
 
 The committed workflow runs on a push to `main` and `feature/**`, on
 each pull request, on demand, and every Monday at 03:00 UTC. Change or
@@ -560,6 +566,14 @@ is unavailable. Set `SMOLVM_ENABLED=0` to force the host path.
 | `Makefile` | merge | Keep your targets. |
 | `cog.toml` | adapt | Set your release branch. |
 | `mise.toml` | merge | Add the selected tools. |
+| `package.json`, `package-lock.json` | copy or adapt | Add the Node packages. |
+| `index.html`, `src/main.ts`, `src/main.test.ts` | adapt | Replace it. |
+| `vite.config.ts` | adapt | Set the build options. |
+| `tsconfig.json` | adapt | Set the compiler options. |
+| `tsconfig.eslint.json` | adapt | Set the lint options. |
+| `.prettierignore` | copy or adapt | Keep the output out of Prettier. |
+| `scripts/check-node.sh` | copy | Run the Node check. |
+| `scripts/format-node.sh` | copy | Run the Node formatter. |
 | `scripts/ci.sh` | copy | Runs the check scripts. |
 | `scripts/check-*.sh` | copy selected | Copy the Phase 3 checks. |
 | `scripts/format*.sh` | copy selected | Copy `format.sh` and pairs. |
@@ -567,7 +581,7 @@ is unavailable. Set `SMOLVM_ENABLED=0` to force the host path.
 | `scripts/release-guest.sh` | copy | Guest release worker. |
 | `scripts/smolvm*.sh` | optional | Copy the five files. |
 | `smol/*` | optional | Copy the five smol files. |
-| `.gitignore` | merge | Add `.cache/` and `.smolvm/`. |
+| `.gitignore` | merge | Add the Node outputs and the caches. |
 | `README.md`, `LICENSE`, `docs/*` | do not copy | Write your own. |
 | `.cache/`, `.smolvm/` | do not copy | Add both to `.gitignore`. |
 
@@ -642,6 +656,18 @@ That file sources the resources file. Host mode needs neither.
     each repository. An empty value stops the command before any API
     call. The remote path needs `curl` and `tar`. It has no host
     fallback.
+
+8. Optional Node check. Skip this step when you do not copy the Node
+    add-on:
+
+    ```bash
+    npm ci
+    make check-node
+    make format-node
+    npm run audit
+    ```
+
+    `npm ci` and `npm audit` need the npm registry.
 
 ## Rollback
 
@@ -785,6 +811,19 @@ owner, then delete it by hand on the server. The name is
 12 hex characters of the SHA-256 of the canonical checkout path. Remote
 mode requires `SMOLVM_OWNER`. The seed base always stays.
 
+### The Node check skips or fails
+
+`scripts/check-node.sh` skips and exits 0 when `node`, `npm`, or
+`package.json` is absent. Install Node and npm with `mise install`. Add
+`package.json` at the repository root.
+
+A missing `package-lock.json` makes `npm ci` fail. Run `npm install`
+one time and commit `package-lock.json`.
+
+An offline machine cannot run `npm ci` or `npm audit`. Run the check on
+a host with npm registry access. You can also set `SMOLVM_ADDR` for the
+remote path. The offline smolvm guest cannot run these commands.
+
 ### make uses /bin/sh and fails
 
 Add the header to the Makefile:
@@ -796,6 +835,120 @@ SHELL := bash
 
 The recipes use bash syntax. Without the header, `make` uses `/bin/sh`.
 
+## Node and Vite add-on
+
+This add-on copies a minimal Node, TypeScript, and Vite starter. The
+starter has one module and one test. npm manages the packages.
+
+The check runs the tests, the Prettier format check, the type check and
+build, and a high severity package audit.
+
+### Copy the files
+
+Copy or adapt these files from the staging clone:
+
+| Path | Action | Notes |
+| --- | --- | --- |
+| `package.json` | adapt | Set the package name and the scripts. |
+| `package-lock.json` | copy | Run `npm install` after a package change. |
+| `index.html` | adapt | Point the entry script at your application. |
+| `src/main.ts` | adapt | Replace the example module. |
+| `src/main.test.ts` | adapt | Replace the example test. |
+| `vite.config.ts` | adapt | Set the build options. |
+| `tsconfig.json` | adapt | Set the compiler options. |
+| `tsconfig.eslint.json` | adapt | Set the lint include list. |
+| `.prettierignore` | copy or adapt | Keep the output out of Prettier. |
+| `scripts/check-node.sh` | copy | Run the Node check. |
+| `scripts/format-node.sh` | copy | Run the Node formatter. |
+
+The starter files are an example. Adapt them to the existing
+application. Do not replace a real application with the starter.
+
+Install the packages from the repository root:
+
+```bash
+npm ci
+```
+
+### Add the Makefile targets
+
+Add `check-node` and `format-node` to the `.PHONY` list. Add these
+targets:
+
+| Target | Recipe |
+| --- | --- |
+| `check-node` | `scripts/check-node.sh` |
+| `format-node` | `scripts/format-node.sh` |
+
+Use a tab for each recipe line. A line with spaces fails.
+
+### Set the Node version
+
+`mise.toml` already has `node = "24"`. The add-on needs no new tool.
+Keep the version or change it for the existing project.
+
+### Add the CI entry
+
+Add this matrix entry to `.github/workflows/ci.yml`:
+
+```yaml
+- name: node
+  install_args: node
+  script: scripts/check-node.sh
+```
+
+Add the `node` job name to the required status checks.
+
+### Ignore the generated files
+
+Add these lines to `.gitignore`:
+
+```text
+node_modules/
+dist/
+coverage/
+```
+
+### Exclude the generated files from a remote upload
+
+Add these flags to the worktree tar in `serve_run_remote` in
+`scripts/smolvm-serve.sh`:
+
+```text
+--exclude=node_modules --exclude=dist --exclude=coverage
+```
+
+Without the exclusions, the remote upload can be large or fail.
+
+### Check behavior
+
+`scripts/check-node.sh` runs these commands in order:
+
+1. `npm ci`
+2. `npm run test`
+3. `npm run format:check`
+4. `npm run build`
+5. `npm run audit`
+
+The script prints a skip message and exits 0 when `node`, `npm`, or
+`package.json` is absent.
+
+`npm ci` and `npm audit` need the npm registry. The offline local
+smolvm guest cannot run them. Use the host or the remote `SMOLVM_ADDR`
+path. You can also add a provisioning step that downloads the
+packages into the pack before the run. This add-on has this limit.
+
+### Check the add-on
+
+Run these commands from the repository root:
+
+```bash
+npm ci
+make check-node
+make format-node
+npm run audit
+```
+
 ## Limits
 
 - This guide does not rewrite history. Old commits stay as they are.
@@ -804,3 +957,5 @@ The recipes use bash syntax. Without the header, `make` uses `/bin/sh`.
 - It does not cover uncommitted files. Commit or stash your work first.
 - The smolvm guest is offline. The guest mounts the repository read-only.
   A check that needs network access or a write fails in the guest.
+- The Node and Vite add-on needs the npm registry. The offline smolvm
+  guest cannot run `npm ci` or `npm audit`.
