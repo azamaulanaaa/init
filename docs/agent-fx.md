@@ -190,15 +190,21 @@ keeps the check usable in a repository that carries no prompts.
 
 ### Prompt content
 
-Every prompt must end with one JSON object. The object has exactly two
-fields: `verdict` and `reason`. `verdict` is the exact string `PASS` or
-`FAIL`. `reason` is a string, and it may be empty. The prompt states that
-the agent writes no text around the object and uses no markdown fence. The
-check validates the object. A bad shape warns and exits 0.
+The committed `.fx/prompt/default.md` is the structured-output base. It
+holds the mode statements, the placeholder references, the decision rule,
+and the tool limits. It names the `default` skill and makes that skill
+active. The prompt does not restate the JSON contract. It points to the
+`default` skill for the contract. A new prompt copies this base and adds
+only its own review rules.
 
-A prompt may name a skill from `.fx/skills`. The default prompt permits a
-skill when one is relevant. The check copies `.fx/skills` and `.fx/prompt`
-into the temporary workspace so fx can find them.
+The check validates the final object. The default skill defines it. The
+object has exactly two fields: `verdict` and `reason`. `verdict` is the
+exact string `PASS` or `FAIL`. `reason` is a string, and it may be empty.
+The agent writes no text around the object and uses no markdown fence. A
+bad shape warns and exits 0.
+
+The check copies `.fx/skills` and `.fx/prompt` into the temporary
+workspace so fx can find them. The skill is available to every prompt.
 
 ### Skills
 
@@ -213,9 +219,26 @@ description: Use this skill when the agent-fx check needs strict review.
 ```
 
 The `name` field is required. The `description` field states when to use
-the skill. The committed `default` skill is reusable. A prompt may name it
-or may name another skill. Add a skill by creating a new directory under
-`.fx/skills` with a `SKILL.md` file.
+the skill. The `strict` name above is an example only. This repository
+commits no `strict` skill.
+
+The committed `default` skill is the canonical structured-output
+contract. It states the file reads, the compare step, the object shape,
+the field names, the field count, the verdict values, the empty reason,
+the no-fence rule, and the tool limits. The default prompt names it, so
+it is active on every default run. The default skill stays in
+`.fx/skills/default/SKILL.md`.
+
+### Extend the default
+
+A new prompt extends the base. Copy `.fx/prompt/default.md`, keep the
+reference to the `default` skill, and add only the review rules for that
+prompt. Do not copy the JSON contract into the prompt.
+
+A new skill extends the contract. Start from the rules in the `default`
+skill and add the rules for that skill. Keep the same object shape, field
+names, field count, and verdict values. Do not add a field and do not
+rename a field.
 
 ### Placeholders
 
@@ -243,8 +266,8 @@ verdict, and the check warns.
 
 1. Copy `.fx/prompt/default.md` to a new file in `.fx/prompt/`. Use a name
     such as `strict.md`.
-2. Keep the JSON verdict instructions. The check accepts only a JSON object
-    with `verdict` and `reason`.
+2. Keep the `default` skill reference. The skill holds the JSON verdict
+    contract. Add only the review rules for the new prompt.
 3. Commit the new prompt.
 4. Run `AGENT_FX_PROMPT=strict make agent-fx` to select the prompt. Run
     `AGENT_FX_PROMPT=strict make agent-fx-history` for history mode.
