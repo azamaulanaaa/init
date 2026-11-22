@@ -201,20 +201,25 @@ writes the changelog, the commit, and the tag.
 
 Auto mode prints a warning and runs `cog bump --auto` on the host when
 smolvm or the accelerator is unavailable. The host path can change the
-repository directly. Set `SMOLVM_ENABLED=0` to require the host path.
+repository directly. Set `SMOLVM_ENABLED=0` to force the host path.
 Set `SMOLVM_ENABLED=1` to require the sandbox. The run then exits 3 when
 no sandbox is available. Set `SMOLVM_ADDR` to use a remote `smolvm
 serve` server. See the [smolvm documentation](docs/smolvm.md).
 
 The host applies the bundle only after it checks the bundle. The checks
 cover the tag, the parent commit, the changed path, and the author and
-committer email. A failure leaves the host repository unchanged.
+committer email. A failure does not apply the release. Concurrent work
+stays.
 
 Pass release arguments with `ARGS`. For example:
 
 ```bash
 make release ARGS='--dry-run'
 ```
+
+`--auto` is the default selector. When `ARGS` holds `--auto`,
+`--version`, `--major`, `--minor`, or `--patch`, the release does not add
+`--auto`.
 
 Run this command to see the next version on the host:
 
@@ -228,12 +233,13 @@ changes nothing and exits 0.
 The first release needs an explicit version. Run one of these commands:
 
 ```bash
-cog bump --version 1.0.0
-cog bump --version 0.1.0
+make release ARGS='--version 1.0.0'
+make release ARGS='--version 0.1.0'
 ```
 
 Use `1.0.0` when the public interface is stable. Use `0.1.0` when the
-interface can change.
+interface can change. The flags `--major`, `--minor`, and `--patch` also
+replace `--auto`.
 
 ## Compatibility and limits
 

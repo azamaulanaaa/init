@@ -1041,10 +1041,16 @@ clone. `SMOLVM_ENABLED=0` stops a second sandbox run.
 
 The host checks the bundle before it changes a ref. It checks the tag,
 the commit parent, the changed path, and the email. It applies the
-commit with `git merge --ff-only`. A failure leaves the host repository
-unchanged. The tag stays local.
+commit with `git merge --ff-only`. A failure deletes the fetched tag. It
+resets the host only when the host is on the captured branch at the
+guest commit with a clean worktree. A user commit or a dirty file stays.
+The tag stays local.
 
-Set `SMOLVM_ENABLED=0` to run the bump on the host. Set
+Local mode needs a normal checkout, not a linked worktree. The
+repository mount must contain the git directory. Remote mode stages the
+git data and can use a linked worktree.
+
+Set `SMOLVM_ENABLED=0` to force the host path. Set
 `SMOLVM_ENABLED=1` to require smolvm. The run then exits 3 when no
 sandbox is available. Set `SMOLVM_ADDR` to use a remote server. See
 [SMOLVM_ENABLED](#smolvm_enabled) and [Remote mode](#remote-mode).

@@ -83,8 +83,9 @@ branch only. Run this command:
 make release
 ```
 
-The target runs `cog bump --auto` through `scripts/release.sh`. The
-command has three steps:
+The target runs `cog bump --auto` through `scripts/release.sh`. `--auto`
+is the default selector. A version flag replaces `--auto`. The command
+has three steps:
 
 1. It updates `CHANGELOG.md`.
 2. It creates a version commit.
@@ -108,6 +109,10 @@ release flow](#sandbox-release-flow).
   when `smolvm` is on `PATH` and the accelerator works. Otherwise it
   prints a warning and runs `cog bump --auto` on the host.
 
+Local mode needs a normal checkout, not a linked worktree. The
+repository mount must contain the git directory. Remote mode stages the
+git data and can use a linked worktree.
+
 In local mode, the script mounts the repository at `/workspace` with
 the `:ro` flag. The mount stays read-only. The guest runs
 `scripts/release-guest.sh`. That script does these steps:
@@ -117,7 +122,7 @@ the `:ro` flag. The mount stays read-only. The guest runs
 2. It removes the `origin` remote.
 3. It checks out the host branch at the captured HEAD.
 4. It sets the hooks path, the user name, and the user email.
-5. It runs `cog bump --auto` with the release arguments.
+5. It runs `cog bump` with the arguments from the host.
 
 The guest runs no second sandbox. The pre-commit hook runs
 `scripts/ci.sh` with `SMOLVM_ENABLED=0`, so the checks do not recurse.
@@ -139,8 +144,10 @@ Before the host changes a ref, it checks these items:
 
 The host fetches the tag from the bundle. It applies the commit with
 `git merge --ff-only`. It creates no merge commit. A failure after the
-fetch deletes the tag and resets the host to the captured HEAD. The host
-repository stays unchanged.
+fetch deletes the fetched tag. It resets the host to the captured HEAD
+only when the host is on the captured branch at the guest commit and
+the worktree is clean. Otherwise it leaves HEAD and the worktree alone.
+A user commit or a dirty file from the guest run stays.
 
 The tag stays local. Push it with `git push origin v1.2.3` when you
 want the GitHub Release workflow to run.
@@ -200,15 +207,17 @@ prints a short message and exits 0. The host repository does not change.
 ## First release
 
 The repository has no tag. Select the first version before the first
-release. Run one of these commands:
+release. `--auto` is the default selector. A version flag replaces
+`--auto`. Run one of these commands:
 
 ```bash
-cog bump --version 1.0.0
-cog bump --version 0.1.0
+make release ARGS='--version 1.0.0'
+make release ARGS='--version 0.1.0'
 ```
 
 The maintainer decides the first version. Use `1.0.0` when the public
-interface is stable. Use `0.1.0` when the interface can change.
+interface is stable. Use `0.1.0` when the interface can change. The
+flags `--major`, `--minor`, and `--patch` also replace `--auto`.
 
 ## Troubleshooting
 

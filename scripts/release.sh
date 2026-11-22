@@ -9,14 +9,12 @@ readonly SMOLVM_ENFORCED_RC=3
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# shellcheck source=scripts/smolvm-resources.sh
-source "$script_dir/smolvm-resources.sh"
-
 name=""
 email=""
 branch=""
 old_head=""
 new_commit=""
+BUMP_ARGS=()
 
 print_host_warning() {
   cat >&2 <<'EOF'
@@ -92,17 +90,33 @@ preflight() {
   old_head="$(git rev-parse HEAD)"
 }
 
+# Build the arguments for cog bump.
+# Add --auto unless the caller selects a version.
+build_bump_args() {
+  local argument
+  for argument in "$@"; do
+    case "$argument" in
+    --auto | --version | --major | --minor | --patch)
+      BUMP_ARGS=("$@")
+      return 0
+      ;;
+    esac
+  done
+  BUMP_ARGS=(--auto "$@")
+}
+
 # Build the guest command. Quote every value for the guest shell.
 guest_command() {
   local command
   local argument
+  build_bump_args "$@"
   command="cd /workspace && SMOLVM_ENABLED=0 SMOLVM_GUEST=1 bash scripts/release-guest.sh"
   command+=" --name $(printf '%q' "$name")"
   command+=" --email $(printf '%q' "$email")"
   command+=" --branch $(printf '%q' "$branch")"
   command+=" --old-head $(printf '%q' "$old_head")"
   command+=" --"
-  for argument in "$@"; do
+  for argument in "${BUMP_ARGS[@]}"; do
     command+=" $(printf '%q' "$argument")"
   done
   printf '%s' "$command"
@@ -110,7 +124,18 @@ guest_command() {
 
 # Run the release on the host. This path needs no sandbox.
 run_host() {
-  cog bump --auto "$@"
+  local top
+  if ! top="$(git rev-parse --show-toplevel 2>/dev/null)"; then
+    echo "error: this directory is not a git repository." >&2
+    return 1
+  fi
+  cd "$top"
+  if ! command -v cog >/dev/null 2>&1; then
+    echo "error: cog is not on PATH. Install cocogitto first." >&2
+    return 1
+  fi
+  build_bump_args "$@"
+  cog bump "${BUMP_ARGS[@]}"
 }
 
 # Run the release in a local smolvm machine.
@@ -118,6 +143,22 @@ run_local() {
   if ! preflight; then
     return 1
   fi
+
+  local git_dir
+  local common_dir
+  if ! git_dir="$(git rev-parse --absolute-git-dir 2>/dev/null)" ||
+    ! common_dir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; then
+    echo "error: the git directory was not resolved." >&2
+    return 1
+  fi
+  if [[ "$git_dir" != "$common_dir" ]]; then
+    echo "error: local release mode needs a normal checkout, not a linked worktree." >&2
+    echo "error: Use a normal checkout, or set SMOLVM_ADDR for remote mode." >&2
+    return 1
+  fi
+
+  # shellcheck source=scripts/smolvm-resources.sh
+  source "$script_dir/smolvm-resources.sh"
   if ! command -v sha256sum >/dev/null 2>&1; then
     echo "error: sha256sum is not on PATH." >&2
     return 1
@@ -289,11 +330,28 @@ validate_release() {
   new_commit="$commit"
 }
 
-# Remove the fetched tag and return the host to the captured HEAD.
+# Delete the fetched tag. Reset the host only when the host still sits at
+# the guest commit on the captured branch with a clean worktree.
 rollback_release() {
   local tag="$1"
+  local current_branch=""
+
   if git rev-parse --verify --quiet "refs/tags/${tag}" >/dev/null; then
     git tag -d "$tag" >/dev/null || true
+  fi
+
+  if [[ -z "$new_commit" ]]; then
+    return 0
+  fi
+  if [[ "$(git rev-parse HEAD 2>/dev/null || true)" != "$new_commit" ]]; then
+    return 0
+  fi
+  current_branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  if [[ "$current_branch" != "$branch" ]]; then
+    return 0
+  fi
+  if [[ -n "$(git status --porcelain)" ]]; then
+    return 0
   fi
   git reset --hard "$old_head" >/dev/null || true
 }
@@ -303,6 +361,8 @@ apply_release() {
   local bundle="$1"
   local tag_hint="$2"
   local tag
+
+  new_commit=""
 
   if ! git bundle verify "$bundle" >/dev/null; then
     echo "error: the release bundle did not verify." >&2
@@ -327,7 +387,7 @@ apply_release() {
 
   if ! validate_release "$tag"; then
     rollback_release "$tag"
-    echo "error: the release did not pass validation. The host is unchanged." >&2
+    echo "error: the release did not change the host." >&2
     return 1
   fi
 

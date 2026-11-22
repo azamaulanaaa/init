@@ -382,7 +382,9 @@ release does three steps:
 2. It creates a version commit.
 3. It creates a tag with the `v` prefix.
 
-Do not edit `CHANGELOG.md` by hand.
+Do not edit `CHANGELOG.md` by hand. The host validation expects
+`CHANGELOG.md` and the `v` tag prefix. `--auto` is the default selector.
+A version flag replaces `--auto`.
 
 `.github/workflows/release.yml` runs on a push of a `v*` tag. It creates
 a GitHub Release. A local tag does not start the workflow. Push the tag
@@ -568,6 +570,10 @@ is unavailable. Set `SMOLVM_ENABLED=0` to force the host path.
 | `.gitignore` | merge | Add `.cache/` and `.smolvm/`. |
 | `README.md`, `LICENSE`, `docs/*` | do not copy | Write your own. |
 | `.cache/`, `.smolvm/` | do not copy | Add both to `.gitignore`. |
+
+The release local and remote modes need `scripts/smolvm-resources.sh`
+and `scripts/smolvm-serve.sh` from the `scripts/smolvm*.sh` group. Host
+mode needs neither.
 
 ## Check the setup
 

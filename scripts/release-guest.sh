@@ -125,20 +125,17 @@ git config user.name "$name"
 git config user.email "$email"
 
 cog_rc=0
-cog bump --auto "$@" || cog_rc=$?
-
-new_head="$(git rev-parse HEAD)"
-if [[ "$new_head" == "$old_head" ]]; then
-  if ((cog_rc != 0)); then
-    echo "warning: cog exited ${cog_rc} and made no change." >&2
-  fi
-  echo "SMOLVM_RELEASE_NONE=1"
-  exit 0
-fi
+cog bump "$@" || cog_rc=$?
 
 if ((cog_rc != 0)); then
   echo "error: cog bump failed with exit code ${cog_rc}." >&2
   exit "$cog_rc"
+fi
+
+new_head="$(git rev-parse HEAD)"
+if [[ "$new_head" == "$old_head" ]]; then
+  echo "SMOLVM_RELEASE_NONE=1"
+  exit 0
 fi
 
 mapfile -t tags < <(git tag --points-at HEAD --list 'v*')
