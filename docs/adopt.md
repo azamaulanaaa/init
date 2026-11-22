@@ -189,7 +189,7 @@ Add the targets:
 | `format-dockerfmt` | `scripts/format-dockerfmt.sh` |
 | `format-dclint` | `scripts/format-dclint.sh` |
 | `hooks` | Sets the hook path and the file modes. |
-| `release` | `cog bump --auto` |
+| `release` | `scripts/release.sh $(ARGS)` |
 | `smolvm` | `scripts/smolvm.sh` |
 | `smolvm-pack` | `smol/pack-build.sh` |
 | `smolvm-clean` | `scripts/smolvm-clean.sh $(ARGS)` |
@@ -337,6 +337,13 @@ repository settings.
 
 ### Phase 6: Add the release flow
 
+Copy the release scripts:
+
+```bash
+cp -p /tmp/template/scripts/release.sh scripts/release.sh
+cp -p /tmp/template/scripts/release-guest.sh scripts/release-guest.sh
+```
+
 Copy `cog.toml` and adapt it:
 
 ```toml
@@ -365,7 +372,11 @@ Run the release on the branch in `branch_whitelist`:
 make release
 ```
 
-The target runs `cog bump --auto`. It does three steps:
+The target runs `scripts/release.sh`. When smolvm is available, the bump
+runs in the sandbox. The guest clones the read-only repository to a
+writable directory. The host applies the returned bundle. Without a
+sandbox, auto mode prints a warning and runs the bump on the host. The
+release does three steps:
 
 1. It updates `CHANGELOG.md`.
 2. It creates a version commit.
@@ -550,6 +561,8 @@ is unavailable. Set `SMOLVM_ENABLED=0` to force the host path.
 | `scripts/ci.sh` | copy | Runs the check scripts. |
 | `scripts/check-*.sh` | copy selected | Copy the Phase 3 checks. |
 | `scripts/format*.sh` | copy selected | Copy `format.sh` and pairs. |
+| `scripts/release.sh` | copy | Host release orchestrator. |
+| `scripts/release-guest.sh` | copy | Guest release worker. |
 | `scripts/smolvm*.sh` | optional | Copy the five files. |
 | `smol/*` | optional | Copy the five smol files. |
 | `.gitignore` | merge | Add `.cache/` and `.smolvm/`. |

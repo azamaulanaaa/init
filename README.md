@@ -192,17 +192,38 @@ branch only. Run this command:
 make release
 ```
 
-The target runs `cog bump --auto`. It updates `CHANGELOG.md`. It creates
-a version commit. It also creates a tag with the `v` prefix, for example
-`v1.2.3`.
+`make release` runs `cog bump --auto` in a smolvm microVM when smolvm
+is available. The repository mount stays read-only. The guest clones
+the repository to a writable temporary directory. It runs the bump
+there. It returns the changelog, one version commit, and the tag as a
+git bundle. The host validates the bundle and applies it. The host then
+writes the changelog, the commit, and the tag.
 
-Run this command to see the next version:
+Auto mode prints a warning and runs `cog bump --auto` on the host when
+smolvm or the accelerator is unavailable. The host path can change the
+repository directly. Set `SMOLVM_ENABLED=0` to require the host path.
+Set `SMOLVM_ENABLED=1` to require the sandbox. The run then exits 3 when
+no sandbox is available. Set `SMOLVM_ADDR` to use a remote `smolvm
+serve` server. See the [smolvm documentation](docs/smolvm.md).
+
+The host applies the bundle only after it checks the bundle. The checks
+cover the tag, the parent commit, the changed path, and the author and
+committer email. A failure leaves the host repository unchanged.
+
+Pass release arguments with `ARGS`. For example:
+
+```bash
+make release ARGS='--dry-run'
+```
+
+Run this command to see the next version on the host:
 
 ```bash
 cog bump --dry-run --auto
 ```
 
-The command changes nothing.
+The command changes nothing. A sandbox release with `--dry-run` also
+changes nothing and exits 0.
 
 The first release needs an explicit version. Run one of these commands:
 
@@ -241,8 +262,8 @@ See the [smolvm documentation](docs/smolvm.md) for the full list.
   Actions.
 - `.githook/` contains the three Git hooks.
 - `scripts/` contains the check scripts, the format scripts, the
-  `ci.sh` entry point, and the `smolvm.sh`, `smolvm-clean.sh`,
-  `smolvm-exec.sh`, and `smolvm-serve.sh` helpers.
+  `ci.sh` entry point, the release scripts, and the `smolvm.sh`,
+  `smolvm-clean.sh`, `smolvm-exec.sh`, and `smolvm-serve.sh` helpers.
 - `smol/` contains the smolvm base machine, the shared `init.sh`
   provisioning script, and the pack build script.
 - `docs/` contains the check, the release, and the smolvm documents.
