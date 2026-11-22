@@ -416,17 +416,17 @@ Do not push the tag. The release workflow does not run. The tag gives
 `cog` a start point. `scripts/check-commits.sh` then checks only the
 commits after the tag.
 
-`cog bump --auto` never jumps from `0.y.z` to `1.0.0`. Select the first
-stable version with an explicit command:
+`--auto` never jumps from `0.y.z` to `1.0.0`. A version flag replaces
+`--auto`. Select the first stable version with an explicit command:
 
 ```bash
-cog bump --version 1.0.0
+make release ARGS='--version 1.0.0'
 ```
 
 Run this command to see the next version without a change:
 
 ```bash
-cog bump --dry-run --auto
+make release ARGS='--dry-run'
 ```
 
 ### Phase 7: Optional smolvm sandbox
