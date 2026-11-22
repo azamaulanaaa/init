@@ -93,6 +93,26 @@ BETA PROMPT STAGED
 Write one JSON object as the final answer.
 TXT
 
+cat >"$repo_custom/.fx/prompt/extension.md" <<'TXT'
+# Extension review
+
+You run in {{MODE}} mode.
+Read the commit message file {{MESSAGE_FILE}}.
+Read the change file {{CHANGE_FILE}}.
+Decide whether the commit message describes the change.
+Set verdict to PASS when the message describes the change.
+Set verdict to FAIL when it does not.
+
+Apply the default skill in .fx/skills/default/SKILL.md.
+The default skill is active for this check and is not optional.
+
+End your answer with the JSON object that the default skill defines.
+
+Use only the read tools.
+Do not run shell commands.
+Do not use web tools.
+TXT
+
 : >"$repo_custom/.fx/prompt/empty.md"
 
 run_check() {
@@ -140,7 +160,7 @@ assert_line() {
   local name="$1"
   local file="$2"
   local wanted="$3"
-  if [[ -f "$file" ]] && grep -qxF "$wanted" "$file"; then
+  if [[ -f "$file" ]] && grep -qxF -- "$wanted" "$file"; then
     printf 'pass: %s\n' "$name"
   else
     printf 'FAIL: %s has no line "%s"\n' "$name" "$wanted"
@@ -152,10 +172,22 @@ assert_absent_line() {
   local name="$1"
   local file="$2"
   local unwanted="$3"
-  if [[ ! -f "$file" ]] || ! grep -qF "$unwanted" "$file"; then
+  if [[ ! -f "$file" ]] || ! grep -qF -- "$unwanted" "$file"; then
     printf 'pass: %s\n' "$name"
   else
     printf 'FAIL: %s has the line "%s"\n' "$name" "$unwanted"
+    fail=1
+  fi
+}
+
+assert_contains() {
+  local name="$1"
+  local file="$2"
+  local wanted="$3"
+  if [[ -f "$file" ]] && grep -qF -- "$wanted" "$file"; then
+    printf 'pass: %s\n' "$name"
+  else
+    printf 'FAIL: %s has no text "%s"\n' "$name" "$wanted"
     fail=1
   fi
 }
@@ -194,17 +226,14 @@ expected_staged="$tmp/expected-staged.txt"
   printf '%s\n' 'Read the commit message file commit-message.txt.'
   printf '%s\n' 'Read the change file staged.diff.'
   printf '%s\n' 'Decide whether the commit message describes the change.'
-  printf '%s\n' ''
-  printf '%s\n' 'You may apply a skill from .fx/skills when one is relevant.'
-  printf '%s\n' ''
-  printf '%s\n' 'End your answer with exactly one JSON object.'
-  printf '%s\n' 'The object has exactly two fields: verdict and reason.'
-  printf '%s\n' 'Set verdict to the exact string PASS or FAIL.'
   printf '%s\n' 'Set verdict to PASS when the message describes the change.'
   printf '%s\n' 'Set verdict to FAIL when it does not.'
-  printf '%s\n' 'Set reason to a short string. The string may be empty.'
-  printf '%s\n' 'Write no text before or after the JSON object.'
-  printf '%s\n' 'Use no markdown fence.'
+  printf '%s\n' ''
+  printf '%s\n' 'Apply the default skill in .fx/skills/default/SKILL.md.'
+  printf '%s\n' 'The default skill is active for this check and is not optional.'
+  printf '%s\n' ''
+  printf '%s\n' 'End your answer with the JSON object that the default skill defines.'
+  printf '%s\n' ''
   printf '%s\n' 'Call no tool other than the read tools.'
   printf '%s\n' 'Do not run shell commands.'
   printf '%s\n' 'Do not use web tools.'
@@ -216,6 +245,19 @@ report default_when_unset 0 "agent-fx check: relevant"
 assert_same_bytes default_staged_bytes "$expected_staged" "$PROMPT_FILE"
 assert_line skills_copied "$SKILL_FILE" 'skill-visible'
 assert_absent_line no_system_injection "$ARGS_FILE" '--system'
+assert_contains default_prompt_names_skill "$PROMPT_FILE" \
+  'Apply the default skill in .fx/skills/default/SKILL.md.'
+assert_contains default_prompt_points_to_skill "$PROMPT_FILE" \
+  'End your answer with the JSON object that the default skill defines.'
+
+# The default skill holds the structured-output contract.
+default_skill="$script_dir/../.fx/skills/default/SKILL.md"
+assert_contains default_skill_verdict "$default_skill" 'verdict'
+assert_contains default_skill_reason "$default_skill" 'reason'
+assert_contains default_skill_pass "$default_skill" 'PASS'
+assert_contains default_skill_fail "$default_skill" 'FAIL'
+assert_contains default_skill_no_fence_rule "$default_skill" 'Use no markdown fence.'
+assert_absent_line default_skill_no_fence "$default_skill" '```'
 
 # The named default prompt must render the same text as the unset name.
 run_check default_when_named "$repo_plain" default staged
@@ -266,6 +308,15 @@ run_check beta_selected "$repo_custom" beta staged
 report beta_selected 0 "agent-fx check: relevant"
 assert_line beta_prompt "$PROMPT_FILE" 'BETA PROMPT STAGED'
 assert_absent_line beta_has_no_alpha_text "$PROMPT_FILE" 'MODE='
+
+# A custom prompt extends the base by naming the default skill.
+run_check custom_extends_default "$repo_custom" extension staged
+report custom_extends_default 0 "agent-fx check: relevant"
+assert_contains custom_extension_names_skill "$PROMPT_FILE" \
+  'Apply the default skill in .fx/skills/default/SKILL.md.'
+assert_line custom_extension_decision "$PROMPT_FILE" \
+  'Decide whether the commit message describes the change.'
+assert_line skills_copied_for_custom_prompt "$SKILL_FILE" 'skill-visible'
 
 # An unknown name warns and skips without calling fx.
 run_check unknown_prompt "$repo_custom" missing staged
