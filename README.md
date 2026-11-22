@@ -249,13 +249,17 @@ against `smolvm serve` v1.35.4. The streamed exec path ran against
 v1.33.0. Check each version against your server before you rely on a
 feature.
 
+The remote release path ran on `smolvm serve` v1.35.5 with the cache
+disk off.
+
 These paths are not verified:
 
 - The full `make ci` run over HTTP. Live remote runs used
   `make smolvm-exec`.
-- The sandbox release path. The release flow passed a simulation with a
-  fake `cog`. A live local `smolvm machine run` release and a live
-  remote `serve_run_remote` release have not run.
+- The local sandbox release path. No live `smolvm machine run` release
+  has run.
+- The release pack build and cache reuse path. The remote release ran
+  with `SMOLVM_SERVE_CACHE=0`.
 - A successful cache publish and a warm init. The tested Windows server
   attached a seed base but refused every publish.
 - macOS on Apple Silicon. The detection exists, but the path is

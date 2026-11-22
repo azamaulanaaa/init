@@ -1195,7 +1195,8 @@ propagation, and `smolvm-clean` ran on that host.
 Remote runs used `smolvm serve` v1.35.4 and v1.33.0. The session flow
 on v1.35.4 ran start, read, stdin, local-directory upload, and delete.
 The v1.33.0 server has no session routes. Those runs used the stream
-and buffered paths.
+and buffered paths. The remote release path ran on v1.35.5 with the
+cache disk off and a cold init.
 
 These paths are not verified:
 
@@ -1205,7 +1206,6 @@ These paths are not verified:
 - The full `make ci` run over HTTP. Live remote runs used
   `make smolvm-exec`.
 - The local release path. No live `smolvm machine run` release ran.
-- The remote release path. No live `serve_run_remote` release ran.
 - Remote cleanup of a real cache base.
 - The isolation check on a KVM host. `make smolvm-verify` has not
   printed `result=isolation_held` there.

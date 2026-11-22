@@ -221,10 +221,11 @@ flags `--major`, `--minor`, and `--patch` also replace `--auto`.
 
 ## Limits
 
-The release path passed a simulation with a fake `cog`. A live local
-`smolvm machine run` release has not run. A live remote
-`serve_run_remote` release has not run. The pack build and cache reuse
-path for a release is also not tested.
+The release path passed a simulation with a fake `cog`. The remote
+release path ran on `smolvm serve` v1.35.5 with `SMOLVM_SERVE_CACHE=0`.
+The guest ran a cold init with real cocogitto 7.0.0. A live local
+`smolvm machine run` release has not run. The pack build and cache reuse
+path for a release is not tested.
 
 ## Troubleshooting
 
