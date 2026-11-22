@@ -1204,6 +1204,8 @@ These paths are not verified:
   publish. Each run paid full provisioning.
 - The full `make ci` run over HTTP. Live remote runs used
   `make smolvm-exec`.
+- The local release path. No live `smolvm machine run` release ran.
+- The remote release path. No live `serve_run_remote` release ran.
 - Remote cleanup of a real cache base.
 - The isolation check on a KVM host. `make smolvm-verify` has not
   printed `result=isolation_held` there.

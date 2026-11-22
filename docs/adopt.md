@@ -571,9 +571,9 @@ is unavailable. Set `SMOLVM_ENABLED=0` to force the host path.
 | `README.md`, `LICENSE`, `docs/*` | do not copy | Write your own. |
 | `.cache/`, `.smolvm/` | do not copy | Add both to `.gitignore`. |
 
-The release local and remote modes need `scripts/smolvm-resources.sh`
-and `scripts/smolvm-serve.sh` from the `scripts/smolvm*.sh` group. Host
-mode needs neither.
+Local release mode needs `scripts/smolvm-resources.sh` from the
+`scripts/smolvm*.sh` group. Remote mode needs `scripts/smolvm-serve.sh`.
+That file sources the resources file. Host mode needs neither.
 
 ## Check the setup
 

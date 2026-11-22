@@ -219,6 +219,13 @@ The maintainer decides the first version. Use `1.0.0` when the public
 interface is stable. Use `0.1.0` when the interface can change. The
 flags `--major`, `--minor`, and `--patch` also replace `--auto`.
 
+## Limits
+
+The release path passed a simulation with a fake `cog`. A live local
+`smolvm machine run` release has not run. A live remote
+`serve_run_remote` release has not run. The pack build and cache reuse
+path for a release is also not tested.
+
 ## Troubleshooting
 
 ### `cog` is not on `PATH`

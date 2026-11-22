@@ -197,7 +197,7 @@ is available. The repository mount stays read-only. The guest clones
 the repository to a writable temporary directory. It runs the bump
 there. It returns the changelog, one version commit, and the tag as a
 git bundle. The host validates the bundle and applies it. The host then
-writes the changelog, the commit, and the tag.
+applies the changelog, the version commit, and the tag.
 
 Auto mode prints a warning and runs `cog bump --auto` on the host when
 smolvm or the accelerator is unavailable. The host path can change the
@@ -206,10 +206,10 @@ Set `SMOLVM_ENABLED=1` to require the sandbox. The run then exits 3 when
 no sandbox is available. Set `SMOLVM_ADDR` to use a remote `smolvm
 serve` server. See the [smolvm documentation](docs/smolvm.md).
 
-The host applies the bundle only after it checks the bundle. The checks
-cover the tag, the parent commit, the changed path, and the author and
-committer email. A failure does not apply the release. Concurrent work
-stays.
+The host applies the bundle only after it validates the bundle. The
+checks cover the tag, the parent commit, the changed path, and the author
+and committer email. A failure does not apply the release. Concurrent
+work stays.
 
 Pass release arguments with `ARGS`. For example:
 
@@ -253,6 +253,9 @@ These paths are not verified:
 
 - The full `make ci` run over HTTP. Live remote runs used
   `make smolvm-exec`.
+- The sandbox release path. The release flow passed a simulation with a
+  fake `cog`. A live local `smolvm machine run` release and a live
+  remote `serve_run_remote` release have not run.
 - A successful cache publish and a warm init. The tested Windows server
   attached a seed base but refused every publish.
 - macOS on Apple Silicon. The detection exists, but the path is
