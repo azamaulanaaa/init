@@ -117,8 +117,11 @@ foreign and are reported, not deleted.
 `make smolvm-exec ARGS='...'` runs one command inside the sandbox.
 Set `SMOLVM_ADDR` to run the checks on a remote `smolvm serve` server.
 Set `SMOLVM_OWNER` to a unique name for this repository. The remote
-path needs `curl` and `tar`. It has no host fallback. It sends the git
-metadata with the working tree so the checks can read the history.
+path needs `curl`, `tar`, and `git`. It has no host fallback. It sends
+the git metadata with the working tree so the checks can read the
+history. Add `.smolvmignore` at the repository root to keep local files
+out of the upload. See
+[the smolvm documentation](docs/smolvm.md#upload-filter).
 `make smolvm-pack` refuses to run while `SMOLVM_ADDR` is set. Unset the
 variable before you build a local pack.
 

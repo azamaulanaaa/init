@@ -264,17 +264,17 @@ source it. One run follows these steps:
 
 1. Check that `curl` and `tar` are on PATH.
 2. Resolve the server address into a base URL and curl options.
-3. Copy the live working tree to a staging directory. Exclude `.git`
-    and `.cache`. Exclude the staging directory and the archive too.
-    A temp directory can appear inside the repository. On some hosts
-    `/tmp` maps to the repository's `.tmp` directory. The source copy
-    must not read the staging directory while the copy writes it.
-    That loop never ends. Build a portable `.git` in the staging
-    directory. Resolve a worktree pointer to the real git dirs first.
-    Copy the common git data and overlay the per-worktree files. Remove
-    the pointer files and the worktree list. Check the staged git data
-    before any API call. Archive the staging directory. No data comes
-    from the local pack cache.
+3. Copy the live working tree to a staging directory. Apply the
+    `.smolvmignore` filter. Exclude `.git`, `.cache`, the staging
+    directory, and the archive. A temp directory can appear inside the
+    repository. On some hosts `/tmp` maps to the repository's `.tmp`
+    directory. The source copy must not read the staging directory
+    while the copy writes it. That loop never ends. Build a portable
+    `.git` in the staging directory. Resolve a worktree pointer to the
+    real git dirs first. Copy the common git data and overlay the
+    per-worktree files. Remove the pointer files and the worktree list.
+    Check the staged git data before any API call. Archive the staging
+    directory. No data comes from the local pack cache.
 4. Call `GET /health` to check that the server answers.
 5. Call `POST /api/v1/machines` with `image` and `network: true` to
     create a machine. The body carries `allowedHosts` when
@@ -291,8 +291,9 @@ source it. One run follows these steps:
 8. Call `PUT /api/v1/machines/<name>/files/...` to upload the archive.
     The client measures the archive first. A size above 1 GiB stops the
     run before the call. When `SMOLVM_SERVE_SYNC_DIR` is set, the
-    client uploads that directory as a second archive and extracts it
-    to a fresh guest directory that it moves into place.
+    client applies the `.smolvmignore` filter to that directory, uploads
+    it as a second archive, and extracts it to a fresh guest directory
+    that it moves into place.
 9. Session mode: run the extract exec, the sync extract, the init
     exec, and the guest command through exec sessions. See
     [Exec sessions](#exec-sessions). Init output appears on the console.
@@ -599,10 +600,33 @@ derivable name, the client prints one `note:` line and skips it. See
 Set `SMOLVM_SERVE_SYNC_DIR` to send one local directory to the machine
 in addition to the worktree archive. Set `SMOLVM_SERVE_SYNC_TARGET` to
 the absolute guest path for it. The default is `/workspace`. The client
-copies the directory, applies the symlink policy below, and uploads the
-result as its own archive. The guest extracts it to a fresh directory
-and moves it into place, so a stale link in the guest can never be
-written through.
+filters and copies the directory, applies the symlink policy below, and
+uploads the result as its own archive. The guest extracts it to a fresh
+directory and moves it into place, so a stale link in the guest can
+never be written through.
+
+##### Upload filter
+
+The client filters both uploads with a file named `.smolvmignore`. The
+repository root uses `<repo_root>/.smolvmignore`. The sync directory
+uses `<SMOLVM_SERVE_SYNC_DIR>/.smolvmignore`. A nested `.smolvmignore`
+applies to its own directory.
+
+The syntax is the git ignore syntax. A comment starts with `#`. A `!`
+prefix re-includes a path. A leading `/` anchors a pattern to the
+directory that holds the file. A trailing `/` matches a directory.
+
+The file is the only filter. The client does not read `.gitignore`,
+`.git/info/exclude`, or the global excludes file.
+
+The filter applies to tracked and untracked files. Empty directories are
+not uploaded.
+
+The directory does not have to be a git repository. The client uses a
+temporary bare repository and an empty index. The `git` command must
+still be on PATH.
+
+The filter runs before the 1 GiB check.
 
 The symlink policy:
 
