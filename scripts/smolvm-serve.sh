@@ -1381,7 +1381,100 @@ serve_session_gap_error() {
   echo "error: The reader fell behind. The run cannot continue." >&2
 }
 
-# Stage one local directory for the upload. Apply the symlink policy:
+# Print the upload file list for one root as NUL-terminated paths.
+# The .smolvmignore file is the only filter.
+# Tracked and untracked files both go through it.
+# Use the real git directory when the root is a repository.
+# Otherwise build a temporary bare repository in the scratch directory.
+# An empty index makes every file count as untracked.
+# Do not pass --exclude-standard. The .gitignore file, the
+# .git/info/exclude file, and the global excludes must not apply.
+# Clear the inherited git variables in a subshell. The caller's
+# environment stays unchanged.
+# Return 1 on any failure.
+serve_upload_list() {
+  local root="$1"
+  local scratch="$2"
+
+  (
+    unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR
+    unset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+    local git_dir=""
+
+    if git_dir="$(git -C "$root" rev-parse --absolute-git-dir 2>/dev/null)"; then
+      :
+    else
+      git_dir="$scratch/git"
+      if ! git init -q --bare "$git_dir"; then
+        return 1
+      fi
+    fi
+
+    if ! GIT_DIR="$git_dir" GIT_WORK_TREE="$root" GIT_INDEX_FILE="$scratch/index" \
+      git read-tree --empty; then
+      return 1
+    fi
+
+    GIT_DIR="$git_dir" GIT_WORK_TREE="$root" GIT_INDEX_FILE="$scratch/index" \
+      git ls-files -z --others --exclude-per-directory=.smolvmignore
+  )
+}
+
+# Copy one upload root to one stage.
+# Apply the .smolvmignore filter and the caller-supplied patterns.
+# The patterns are tar patterns. A bare name matches at any depth.
+# Return 1 on any failure.
+serve_upload_stage() {
+  local root="$1"
+  local stage="$2"
+  shift 2
+  local scratch=""
+  local pattern
+  local -a tar_args=()
+  local -a pipe_rc=()
+
+  if ! scratch="$(mktemp -d "${TMPDIR:-/tmp}/smolvm-list.XXXXXX")"; then
+    echo "error: the temporary list directory was not created." >&2
+    return 1
+  fi
+  if ! mkdir -p "$stage"; then
+    rm -rf -- "$scratch"
+    echo "error: the upload stage was not created." >&2
+    return 1
+  fi
+
+  for pattern in "$@"; do
+    tar_args+=("--exclude=$pattern")
+  done
+  # The scratch directory can sit inside the root. Exclude it by its
+  # base name.
+  tar_args+=("--exclude=${scratch##*/}")
+
+  # Put every --exclude option before -T -. GNU tar treats an option
+  # after -T as a positional name and ignores it.
+  serve_upload_list "$root" "$scratch" |
+    tar -C "$root" --null "${tar_args[@]}" -T - -cf - |
+    tar -C "$stage" -xf -
+  pipe_rc=("${PIPESTATUS[@]}")
+
+  rm -rf -- "$scratch"
+  if ((pipe_rc[0] != 0)); then
+    echo "error: the upload file list was not built." >&2
+    return 1
+  fi
+  if ((pipe_rc[1] != 0)); then
+    echo "error: the upload files were not read from the root." >&2
+    return 1
+  fi
+  if ((pipe_rc[2] != 0)); then
+    echo "error: the upload files were not written to the stage." >&2
+    return 1
+  fi
+  return 0
+}
+
+# Stage one local directory for the upload.
+# Apply the .smolvmignore filter, then the symlink policy:
 # - keep a relative link that stays inside the tree,
 # - copy the target of a link that leaves the tree and names a regular
 #   file,
@@ -1391,15 +1484,15 @@ serve_session_gap_error() {
 serve_sync_stage() {
   local source_dir="$1"
   local stage_dir="$2"
+  local stage_name="$3"
+  local tarball_name="$4"
   local link
   local link_text
   local resolved
   local real
   local hops=0
 
-  mkdir -p "$stage_dir" || return 1
-  if ! cp -a "${source_dir%/}/." "$stage_dir/"; then
-    echo "error: the sync directory was not copied." >&2
+  if ! serve_upload_stage "$source_dir" "$stage_dir" "$stage_name" "$tarball_name"; then
     return 1
   fi
 
@@ -1633,20 +1726,17 @@ serve_run_remote() {
   stage="$(mktemp -d "${TMPDIR:-/tmp}/smolvm-stage.XXXXXX")" || return 1
   SERVE_STAGE="$stage"
 
-  # Copy the working tree without the cache. Build a portable .git below.
-  # The temp directory can be visible inside the repository. On this host
-  # /tmp maps to the repository's .tmp directory. Without the excludes the
-  # first tar would read the staging directory while the second tar writes
-  # it. That loop never ends. Exclude both by their unique base names.
+  # Copy the working tree through the .smolvmignore filter. Build a
+  # portable .git below. The temp directory can be visible inside the
+  # repository. On this host /tmp maps to the repository's .tmp
+  # directory. Without the excludes the tar would read the staging
+  # directory while the other tar writes it. That loop never ends.
+  # Exclude .git, .cache, and both temp base names.
   local stage_name tarball_name
   stage_name="${stage##*/}"
   tarball_name="${tarball##*/}"
-  if ! tar -C "$repo_root" \
-    --exclude=.git --exclude=.cache \
-    --exclude="*/$stage_name" --exclude="*/$tarball_name" \
-    -cf - . |
-    tar -C "$stage" -xf -; then
-    echo "error: the working tree was not staged." >&2
+  if ! serve_upload_stage "$repo_root" "$stage" \
+    .git .cache "$stage_name" "$tarball_name"; then
     return 1
   fi
 
@@ -1705,7 +1795,8 @@ serve_run_remote() {
     local sync_stage
     sync_stage="$(mktemp -d "${TMPDIR:-/tmp}/smolvm-sync-stage.XXXXXX")" || return 1
     SERVE_SYNC_STAGE="$sync_stage"
-    if ! serve_sync_stage "${SMOLVM_SERVE_SYNC_DIR}" "$sync_stage"; then
+    if ! serve_sync_stage "${SMOLVM_SERVE_SYNC_DIR}" "$sync_stage" \
+      "${sync_stage##*/}" "${sync_tarball##*/}"; then
       return 1
     fi
     if ! tar -C "$sync_stage" -czf "$sync_tarball" .; then
