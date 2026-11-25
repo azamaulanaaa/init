@@ -1,7 +1,7 @@
 SHELL := bash
 .DEFAULT_GOAL := help
 
-.PHONY: help ci smolvm smolvm-pack smolvm-clean smolvm-exec smolvm-preflight smolvm-verify check-jactionlint check-bash check-commits check-dclint check-dockerfmt check-editorconfig check-gitleaks check-hadolint check-markdown check-mise check-shfmt check-zizmor format format-shfmt format-dockerfmt format-dclint hooks release
+.PHONY: help ci smolvm smolvm-pack smolvm-clean smolvm-exec smolvm-preflight smolvm-verify check-jactionlint check-bash check-go check-go-vet check-gofmt check-commits check-dclint check-dockerfmt check-editorconfig check-gitleaks check-hadolint check-markdown check-mise check-shfmt check-zizmor format format-gofmt format-shfmt format-dockerfmt format-dclint hooks release
 
 help: ## Show this help.
 	@echo "Targets:"
@@ -33,6 +33,15 @@ check-jactionlint: ## Check the GitHub Actions workflows with jactionlint.
 
 check-bash: ## Check every bash file with shellcheck.
 	scripts/check-bash.sh
+
+check-go: ## Check the Go test suite when go is available.
+	scripts/check-go.sh
+
+check-go-vet: ## Check the Go code with vet when go is available.
+	scripts/check-go-vet.sh
+
+check-gofmt: ## Check the Go code format when go is available.
+	scripts/check-gofmt.sh
 
 check-commits: ## Check the commit history with cocogitto.
 	scripts/check-commits.sh
@@ -66,6 +75,9 @@ check-zizmor: ## Check the GitHub Actions workflows with zizmor.
 
 format: ## Apply every formatter.
 	scripts/format.sh
+
+format-gofmt: ## Format the Go code when go is available.
+	scripts/format-gofmt.sh
 
 format-shfmt: ## Format every bash file with shfmt.
 	scripts/format-shfmt.sh
