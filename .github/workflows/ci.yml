@@ -63,6 +63,15 @@ jobs:
           - name: zizmor
             install_args: zizmor
             script: scripts/check-zizmor.sh
+          - name: go
+            install_args: go
+            script: scripts/check-go.sh
+          - name: go-vet
+            install_args: go
+            script: scripts/check-go-vet.sh
+          - name: gofmt
+            install_args: go
+            script: scripts/check-gofmt.sh
     steps:
       - name: Check out the repository
         if: matrix.name != 'commits'
