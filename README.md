@@ -5,6 +5,33 @@
 The sections below show how to install the hooks, run the checks,
 commit, and release a version.
 
+## Go starter
+
+This repository includes a minimal Go project starter. The program
+prints a short greeting when it runs.
+
+The module is `github.com/azamaulanaaa/init/go`. The library lives in
+`greeting/`. The binary lives in `cmd/greeter/`.
+
+Build the project with this command:
+
+```bash
+go build ./...
+```
+
+Check the project with these commands:
+
+```bash
+go test ./...
+go vet ./...
+```
+
+Run the project with this command:
+
+```bash
+go run ./cmd/greeter
+```
+
 ## Customize this template
 
 Replace these values before you use this template:
@@ -21,7 +48,7 @@ To add the checks and tools to an existing repository, see
 You need `git` and `make`.
 
 The checks need these tools on `PATH`: `cog`, `dclint`, `dockerfmt`,
-`editorconfig-checker`, `gitleaks`, `hadolint`, `jactionlint`,
+`editorconfig-checker`, `gitleaks`, `go`, `hadolint`, `jactionlint`,
 `markdownlint-cli2`, `shellcheck`, `shfmt`, and `zizmor`.
 
 If you use [`mise`](https://mise.jdx.dev/), run `mise install`. Then
@@ -61,6 +88,9 @@ Run these commands to check one area at a time:
 ```bash
 make check-jactionlint
 make check-bash
+make check-go
+make check-go-vet
+make check-gofmt
 make check-commits
 make check-dclint
 make check-dockerfmt
@@ -74,6 +104,7 @@ make check-zizmor
 ```
 
 `make check-mise` prints a skip message and exits 0 when `mise` is
+absent. The Go checks also print a skip message and exit 0 when `go` is
 absent. `make help` lists every target.
 
 The checks do not change files. They report a problem and exit non-zero.
@@ -147,11 +178,13 @@ fails.
 Run these commands to apply one formatter at a time:
 
 ```bash
+make format-gofmt
 make format-shfmt
 make format-dockerfmt
 make format-dclint
 ```
 
+`make format-gofmt` formats the Go files with `gofmt`.
 `make format-shfmt` formats the bash files with `shfmt`.
 `make format-dclint` fixes the Docker Compose files with `dclint`.
 `make format-dockerfmt` formats the Dockerfile and Containerfile files
@@ -288,6 +321,9 @@ See the [smolvm documentation](docs/smolvm.md) for the full list.
 - `Makefile` contains the command targets for setup, checks, and
   release.
 - `mise.toml` contains the tool version constraints.
+- `go.mod` names the Go module and the Go version.
+- `greeting/` holds the starter library and its test.
+- `cmd/greeter/` holds the starter binary.
 - `LICENSE` contains the license text.
 
 ## Documentation

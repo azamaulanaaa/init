@@ -59,7 +59,7 @@ You need these items:
 | The check tools | required | The tools for the checks you select. |
 
 The selected checks need `shellcheck`, `shfmt`, `cog`,
-`markdownlint-cli2`, `editorconfig-checker`, `gitleaks`,
+`markdownlint-cli2`, `editorconfig-checker`, `gitleaks`, `go`,
 `jactionlint`, `zizmor`, `hadolint`, `dockerfmt`, and `dclint` on
 `PATH`. The `mise` check also needs `mise`.
 
@@ -153,10 +153,10 @@ Add the `.PHONY` list from the staged Makefile:
 ```make
 .PHONY: help ci smolvm smolvm-pack smolvm-clean smolvm-exec \
   smolvm-preflight smolvm-verify check-jactionlint check-bash \
-  check-commits check-dclint check-dockerfmt check-editorconfig \
-  check-gitleaks check-hadolint check-markdown check-mise \
-  check-shfmt check-zizmor format format-shfmt format-dockerfmt \
-  format-dclint hooks release
+  check-go check-go-vet check-gofmt check-commits check-dclint \
+  check-dockerfmt check-editorconfig check-gitleaks check-hadolint \
+  check-markdown check-mise check-shfmt check-zizmor format \
+  format-gofmt format-shfmt format-dockerfmt format-dclint hooks release
 ```
 
 The committed file has this list on one line. A line continuation also
@@ -174,6 +174,9 @@ Add the targets:
 | `ci` | `scripts/ci.sh` |
 | `check-jactionlint` | `scripts/check-jactionlint.sh` |
 | `check-bash` | `scripts/check-bash.sh` |
+| `check-go` | `scripts/check-go.sh` |
+| `check-go-vet` | `scripts/check-go-vet.sh` |
+| `check-gofmt` | `scripts/check-gofmt.sh` |
 | `check-commits` | `scripts/check-commits.sh` |
 | `check-dclint` | `scripts/check-dclint.sh` |
 | `check-dockerfmt` | `scripts/check-dockerfmt.sh` |
@@ -185,6 +188,7 @@ Add the targets:
 | `check-shfmt` | `scripts/check-shfmt.sh` |
 | `check-zizmor` | `scripts/check-zizmor.sh` |
 | `format` | `scripts/format.sh` |
+| `format-gofmt` | `scripts/format-gofmt.sh` |
 | `format-shfmt` | `scripts/format-shfmt.sh` |
 | `format-dockerfmt` | `scripts/format-dockerfmt.sh` |
 | `format-dclint` | `scripts/format-dclint.sh` |
@@ -212,6 +216,9 @@ Keep one help target and one default goal.
 | Check | Tool | When to keep it |
 | --- | --- | --- |
 | `bash` | `shellcheck` | Keep for bash or sh files. |
+| `go` | `go` | Keep for Go tests. |
+| `go-vet` | `go` | Keep for Go source checks. |
+| `gofmt` | `go` | Keep for Go formatting. |
 | `shfmt` | `shfmt` | Keep for bash formatting. |
 | `commits` | `cog` | Keep for Conventional Commits. |
 | `markdown` | `markdownlint-cli2` | Keep for Markdown files. |
@@ -234,12 +241,14 @@ Delete a check script that you do not need. `scripts/ci.sh` runs every
 `scripts/check-*.sh` in name order. The script file is the only
 registration.
 
-A format script pairs with its check. Copy `format-shfmt.sh` with
-`check-shfmt.sh`, `format-dockerfmt.sh` with `check-dockerfmt.sh`, and
-`format-dclint.sh` with `check-dclint.sh`.
+A format script pairs with its check. Copy `format-gofmt.sh` with
+`check-gofmt.sh`, `format-shfmt.sh` with `check-shfmt.sh`,
+`format-dockerfmt.sh` with `check-dockerfmt.sh`, and `format-dclint.sh`
+with `check-dclint.sh`.
 
 Some checks print `no ... files` and exit 0 when no file matches. Keep
-the check when the repository can gain such a file later.
+the check when the repository can gain such a file later. The Go checks
+skip with exit 0 when `go` is absent.
 
 ### Phase 4: Install the hooks
 
@@ -308,7 +317,8 @@ A matrix entry has this shape:
   script: scripts/check-bash.sh
 ```
 
-The `mise` entry uses `install_args: ''` because it needs no tool.
+The `mise` entry uses `install_args: ''` because it needs no tool. A Go
+entry uses `install_args: go`.
 
 The committed workflow runs on a push to `main` and `feature/**`, on
 each pull request, on demand, and every Monday at 03:00 UTC. Change or

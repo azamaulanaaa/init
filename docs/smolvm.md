@@ -735,6 +735,9 @@ The pack is a baked artifact built ahead of time. A
 The host asks the registry only for `--oci-cache` runs. No step in the
 check path passes `--oci-cache`, so the checks run with no network.
 
+The Go checks use the Go tool from the pack. They read the working tree
+only. They need no network.
+
 The pack build is the only step with a network. Nothing untrusted
 runs during the build. The build machine mounts the repository at
 `/workspace` with the `:ro` flag and only reads `mise.toml` from it.
@@ -826,7 +829,7 @@ failed copy: ~/.cache/mise/invocation-downloads/.tmptTmkhE/artifact -> ~/.local/
 ```
 
 The cause is the `overlay` limit. The install downloads node 24,
-ten tools, and two npm trees. The cache and the tools together
+eleven tools, and two npm trees. The cache and the tools together
 exceed a 1 GiB overlay. The fix raises `storage` to 2 GiB and
 `overlay` to 4 GiB. The pack build also runs `mise cache clear`
 after the install. The clear removes the download cache from the

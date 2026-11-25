@@ -128,9 +128,10 @@ propagates to the host.
 ### Prerequisites
 
 You need `git` and `make`. The checks need `cog`, `dclint`,
-`dockerfmt`, `editorconfig-checker`, `gitleaks`, `hadolint`, `jactionlint`,
-`markdownlint-cli2`, `shellcheck`, `shfmt`, and `zizmor` on `PATH`. `mise` is
-optional. Run `make help` to list the available targets.
+`dockerfmt`, `editorconfig-checker`, `gitleaks`, `go`, `hadolint`,
+`jactionlint`, `markdownlint-cli2`, `shellcheck`, `shfmt`, and `zizmor`
+on `PATH`. `mise` is optional. Run `make help` to list the available
+targets.
 
 `make ci` runs the checks inside a smolvm microVM when `smolvm` is on
 `PATH` and the host accelerator is available (`/dev/kvm` on Linux,
@@ -171,6 +172,9 @@ Run these commands to check one area at a time:
 ```bash
 make check-jactionlint
 make check-bash
+make check-go
+make check-go-vet
+make check-gofmt
 make check-commits
 make check-dclint
 make check-dockerfmt
@@ -184,7 +188,8 @@ make check-zizmor
 ```
 
 These targets call `scripts/check-jactionlint.sh`,
-`scripts/check-bash.sh`, `scripts/check-commits.sh`,
+`scripts/check-bash.sh`, `scripts/check-go.sh`, `scripts/check-go-vet.sh`,
+`scripts/check-gofmt.sh`, `scripts/check-commits.sh`,
 `scripts/check-dclint.sh`, `scripts/check-dockerfmt.sh`,
 `scripts/check-editorconfig.sh`, `scripts/check-gitleaks.sh`,
 `scripts/check-hadolint.sh`,
@@ -202,7 +207,8 @@ script must also change to the repository root. The working tree is the
 set of checked-out files in the repository.
 
 `scripts/check-mise.sh` prints a skip message and exits 0 when `mise` is
-absent. The script skips the check on purpose.
+absent. The script skips the check on purpose. The Go checks skip in
+the same way when `go` is absent.
 
 ### Format the files
 
@@ -219,16 +225,22 @@ make format
 prints `run: <script>` before each script. It stops when a formatter
 fails. It prints `all formatting applied (N scripts)` after the last
 script. When no format script exists, it prints `no format scripts` and
-exits 0. The run includes `scripts/format-shfmt.sh`,
-`scripts/format-dockerfmt.sh`, and `scripts/format-dclint.sh`.
+exits 0. The run includes `scripts/format-gofmt.sh`,
+`scripts/format-shfmt.sh`, `scripts/format-dockerfmt.sh`, and
+`scripts/format-dclint.sh`.
 
 Run these commands to apply one formatter at a time:
 
 ```bash
+make format-gofmt
 make format-shfmt
 make format-dockerfmt
 make format-dclint
 ```
+
+`scripts/format-gofmt.sh` runs `gofmt -w` on the Go files. The check
+script `scripts/check-gofmt.sh` runs `gofmt -l`. The check script stops
+when `gofmt` lists a file. It does not write.
 
 `scripts/format-shfmt.sh` runs `shfmt -i 2 -w` on the bash files. The
 check script `scripts/check-shfmt.sh` runs `shfmt -i 2 -d` on the same
@@ -379,7 +391,8 @@ can drift and produce different results.
 
 The workflow [`ci.yml`](../.github/workflows/ci.yml) runs the checks on
 GitHub Actions. It runs on each pull request and each push to `main`.
-The workflow has one matrix job with ten entries plus four extra jobs.
+The workflow has one matrix job with thirteen entries plus four extra
+jobs.
 
 Each check job uses the `jdxcode/mise` image on the `ubuntu-24.04` runner.
 The image provides `mise`, `git`, `curl`, and CA certificates. It provides
@@ -390,15 +403,16 @@ Pin each image by digest and each action by commit SHA. Add a comment
 that names the version of the pin. A fixed version gives the same result
 on each run.
 
-One matrix job runs the ten check scripts. Each matrix entry sets the
-tool that its check needs. The matrix entry for `mise` installs no tool.
+One matrix job runs the thirteen check scripts. Each matrix entry sets
+the tool that its check needs. The matrix entry for `mise` installs no
+tool. The Go entries install `go`.
 
 The workflow has no release job. The release stays local. The
 [release workflow](release.md) describes the release steps.
 
 ### Required status checks
 
-The fourteen job names are the status check names:
+The seventeen job names are the status check names:
 
 - `mise`
 - `jactionlint`
@@ -410,6 +424,9 @@ The fourteen job names are the status check names:
 - `dockerfmt`
 - `dclint`
 - `zizmor`
+- `go`
+- `go-vet`
+- `gofmt`
 - `PR title`
 - `gitleaks`
 - `editorconfig`
@@ -417,7 +434,7 @@ The fourteen job names are the status check names:
 
 `PR title` and `dependency-review` run only on pull requests.
 
-Set these fourteen names as required status checks on the default branch.
+Set these seventeen names as required status checks on the default branch.
 Configure branch protection or rulesets on GitHub. Set them in the
 repository settings. Do not set them in the repository files.
 
